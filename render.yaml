@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: magicpin-vera-bot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m uvicorn app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /v1/healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: VERA_DB
+        value: /tmp/vera.sqlite3
+      - key: VERA_TEAM_NAME
+        value: Hisham Vera
+      - key: VERA_MEMBER_NAME
+        value: Hisham Siddiqui
+      - key: VERA_CONTACT_EMAIL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: VERA_LLM_MODEL
+        value: gpt-4.1-mini
