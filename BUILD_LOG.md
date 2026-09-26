@@ -135,4 +135,37 @@ The submitted base URL is `https://magicpin-vera-bot-06ct.onrender.com`, backed 
 
 **What we found:** Magicpin included a local `judge_simulator.py`. It can use Gemini or OpenAI as the *practice judge*. The choice of judge model does not change which model our bot uses to write messages. The simulator prints a number out of 50 and also displays that number divided by 50 as a percentage. That percentage describes the judge's opinion of message quality, not a tested accuracy rate.
 
-**What we are doing now:** We copied their scoring script without modifying it. We chose the same 15 fact-backed cases from the supplied 30 pairs, covering all five business categories. On the deployed server, a limited background run will use the existing private OpenAI key to judge the bot's built-in messages. It will save each score and explanation so we can find the weak cases before changing any wording. An AI failure or unparseable answer must be marked as an error, never converted to a pretend valid score. The public read-only report will be at `/demo/evaluation`. **Status: evaluation code prepared and locally checked; awaiting deployment and actual scores.**
+**Baseline completed:** We copied their scoring script without modifying it. We chose the same 15 fact-backed cases from the supplied 30 pairs, covering all five business categories. The deployed server used the existing private OpenAI key and `gpt-4.1-mini` as the *practice judge* to rate the bot's built-in messages. It saved each score and explanation. Failed AI calls are excluded. The read-only scorecard is at `/demo/evaluation`.
+
+| Baseline measure | Score |
+| --- | ---: |
+| Average total across 15 messages | **34.47 / 50** |
+| Uses concrete facts | 7.00 / 10 |
+| Sounds right for the kind of business | 7.53 / 10 |
+| Fits this particular business | 7.13 / 10 |
+| Explains why the message arrives now | 6.73 / 10 |
+| Makes the person want to reply | 6.07 / 10 |
+
+**How to read this:** An AI judged *fifteen built-in drafts*, not all possible customer and merchant actions. The website may show an optional AI rewrite on top of those drafts, and the challenge company may judge different messages with a different model. So **34.47/50 is a practice score, not an official challenge score or 68.94% accuracy.** The honest answer to “what accuracy have we reached?” is still “we do not have a labeled official accuracy measure.”
+
+**Why the low-scoring messages were weak:** The webinar message only named a webinar, leaving out its date, credits, and attendance fee even though they were supplied. The salon question ignored a recorded 20% rise in calls. The gym follow-up did not mention that the customer previously focused on weight loss. These are gaps we can fix using existing facts.
+
+**Where the scoring code lives:** `challenge_judge.py` is the original judge's scoring script. `judge_eval.py` picks 15 repeatable examples, calls that scorer, and saves the result in Postgres as it progresses. In `app.py`, startup launches one run when a new run ID is chosen; `GET /demo/evaluation` lets us read its progress and results. `engine.py` writes the draft message being tested. `render.yaml` names the evaluation run and model. The private key is an environment value on Render and never appears in a project file. `tests/test_message_improvements.py` checks that new claims are drawn from supplied facts. The first baseline is saved separately so we can compare it with the second run.
+
+**What we changed for the second run:** We added webinar details from the category calendar, included an observed call trend only when the merchant record supplies it, and made the gym follow-up refer to the customer's recorded goal. We also make a dentist's greeting say `Dr.` only if that exact name already appears in the merchant name. We kept the same 15 sample cases and judge model so the before-and-after comparison is understandable. The score may still vary between AI calls; a difference in one small sample is not proof of better performance on unseen cases.
+
+**Second run completed:** The new drafts averaged **36.47/50** across the same 15 cases, an increase of **2.00 points out of 50**. All 15 were scored successfully in both runs. The baseline and revised JSON reports are saved separately, so you can read every message and the judge's explanation.
+
+| Dimension | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| Concrete facts | 7.00 | 7.47 | +0.47 |
+| Category voice | 7.53 | 7.67 | +0.14 |
+| Merchant fit | 7.13 | 7.73 | +0.60 |
+| Why now | 6.73 | 7.07 | +0.34 |
+| Likelihood of reply | 6.07 | 6.53 | +0.46 |
+
+**A real example:** The old webinar text told Dr. Meera the webinar's name and offered a summary. The new version gives the event date, **2 CDE credits**, and the price rule **free for IDA members, ₹500 otherwise**, all from the supplied category calendar. That one case went from **21/50 to 36/50**. The salon question gained the verified **20% call rise** and went from **26/50 to 37/50**. A customer gym reminder used her recorded **weight loss** focus and went from **29/50 to 35/50**.
+
+**The uncertainty in those numbers:** Some *unchanged* messages received different scores across the two calls, including the restaurant match-day message (35 then 32). AI judges are variable. The evidence supports a better result on this practice set, particularly in the revised weak cases, but it does not prove the same gain on secret tests or reveal the official score. The scorecard evaluates `engine.py`'s built-in draft messages. It does not score the optional `writer.py` rewrite, a full hour of judge ticks, customer conversations, abstentions, or API latency. The model judged the supplied synthetic facts as given; we did not independently verify the dataset's webinar and compliance claims.
+
+**What you can do next:** Open `/demo/evaluation` for the live second report. The saved `vera_baseline_scorecard.json` and `vera_improved_scorecard.json` let you compare message bodies and five scores case by case. We can next test the complete API through the simulator with a private judge key, and decide whether a Gemini comparison is worth the extra account and cost. Our bot does **not** need Gemini just because other people chose it to *grade* their local runs.
