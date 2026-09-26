@@ -68,6 +68,8 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
         return None
     name = short_name(merchant)
     business = merchant.get("identity", {}).get("name", "your business")
+    if business.startswith(f"Dr. {name}"):
+        name = f"Dr. {name}"
     offer = active_offer(merchant)
     locality = merchant.get("identity", {}).get("locality", "")
     scope = trigger.get("scope", "merchant")
@@ -119,7 +121,12 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
             if days is None:
                 return None
             hook = f"It has been {days} days since your last visit."
-            ask = "Would you like to hear about a suitable next visit? Reply YES or STOP."
+            focus = payload.get("previous_focus") or customer.get("preferences", {}).get("training_focus")
+            if merchant.get("category_slug") == "gyms" and focus:
+                hook += f" You previously focused on {fact(focus).replace('_', ' ')}."
+                ask = "Want us to suggest a suitable session after checking availability? Reply YES, or STOP to stop messages."
+            else:
+                ask = "Would you like to hear about a suitable next visit? Reply YES or STOP."
         else:
             return None
         if customer.get("identity", {}).get("language_pref") in {"hi", "hi-en mix"}:
@@ -144,6 +151,15 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
             hook += f" Listed batches: {', '.join(map(str, batches))}." if batches else ""
             ask = "Want a stock-check checklist drafted? Reply YES."
             draft_type = "stock check checklist"
+        elif kind == "cde_opportunity" and item.get("date"):
+            credits = payload.get("credits") or item.get("credits")
+            detail = f" {credits} CDE credits." if credits else ""
+            fee = item.get("actionable", "")
+            hook = f"{item.get('title')} ({item.get('source', 'source not listed')}) is on {date_label(item['date'])}.{detail}"
+            if fee:
+                hook += f" {fee.rstrip('.')}."
+            ask = "Want a brief summary of the practical takeaways for your clinic? Reply YES."
+            draft_type = "webinar summary"
         else:
             ask = "Want a short, shareable summary drafted? Reply YES."
             draft_type = "shareable summary"
@@ -214,13 +230,20 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
         if days is None:
             return None
         hook = f"It's been {days} days since we last discussed {fact(payload.get('last_topic', 'your profile')).replace('_', ' ')}."
+        calls_delta = (merchant.get("performance", {}).get("delta_7d") or {}).get("calls_pct")
+        if isinstance(calls_delta, (int, float)) and calls_delta < 0:
+            hook += f" Your calls also fell {percent(calls_delta)} over the last 7 days."
         ask = "Would a fresh draft for your Google listing help? Reply YES."
         draft_type = "Google post"
     elif kind == "curious_ask_due":
         if not payload.get("ask_template"):
             return None
-        hook = f"Quick question about {business}: what service are customers asking for most this week?"
-        ask = "Tell me the service and I'll turn it into a Google post draft."
+        calls_delta = (merchant.get("performance", {}).get("delta_7d") or {}).get("calls_pct")
+        if isinstance(calls_delta, (int, float)) and calls_delta > 0:
+            hook = f"Calls to {business} rose {percent(calls_delta)} in the last 7 days. Which service are customers asking for most this week?"
+        else:
+            hook = f"Quick question about {business}: what service are customers asking for most this week?"
+        ask = "Tell me one and I'll draft a Google post for that demand."
         cta = "open_ended"
         draft_type = "Google post"
     elif kind == "active_planning_intent":
