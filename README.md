@@ -22,6 +22,8 @@ Check: `http://localhost:8080/` for the website, `http://localhost:8080/v1/healt
 
 Generate additional practice records with `python dataset/generate_dataset.py --seed-dir dataset --out expanded`. Deploy with [`DEPLOY_RENDER.md`](DEPLOY_RENDER.md) and `render.yaml`. Set `VERA_TEAM_NAME`, `VERA_MEMBER_NAME`, and `VERA_CONTACT_EMAIL` before submission; use a **single server worker**. `/v1/healthz` reports `storage_backend` so you can verify the deployed service uses PostgreSQL. If the configured database is unavailable, the service fails rather than silently writing judge state to a temporary SQLite file.
 
+For the existing challenge submission, the public URL is `https://magicpin-vera-bot-06ct.onrender.com`. Its Render Blueprint connects the web service to `magicpin-vera-state`; check `storage_backend: postgresql` before relying on durable judge state.
+
 ## Tradeoffs and useful missing data
 
 The rule-based message remains available if the optional AI request fails. It abstains on generated dataset `placeholder: true` triggers rather than claiming an event took place. The most useful extra context would be approved offers, real appointment availability, verified sources for digest items, and permission to publish a draft after merchant approval. The public deployment URL and your team contact email must be filled in on Render.
