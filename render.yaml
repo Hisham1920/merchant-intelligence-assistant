@@ -11,6 +11,10 @@ services:
         value: 3.12.8
       - key: VERA_DB
         value: /tmp/vera.sqlite3
+      - key: DATABASE_URL
+        fromDatabase:
+          name: magicpin-vera-state
+          property: connectionString
       - key: VERA_TEAM_NAME
         value: Hisham Vera
       - key: VERA_MEMBER_NAME
@@ -21,3 +25,6 @@ services:
         sync: false
       - key: VERA_LLM_MODEL
         value: gpt-4.1-mini
+databases:
+  - name: magicpin-vera-state
+    plan: free

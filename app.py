@@ -6,9 +6,7 @@ from datetime import datetime, timezone, timedelta
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
-import sqlite3
 import threading
 import time
 import uuid
@@ -21,22 +19,16 @@ from pydantic import BaseModel, Field
 from engine import compose, draft_reply
 from writer import has_model, improve
 from demo import router as demo_router
+from storage import connect, backend
+from pathlib import Path
 
 
 START = time.time()
-DATABASE = Path(os.environ.get("VERA_DB", str(Path(__file__).with_name("vera.sqlite3"))))
-DATABASE.parent.mkdir(parents=True, exist_ok=True)
 LOCK = threading.RLock()
 app = FastAPI(title="Vera Merchant Assistant", version="0.1.0")
 WEB = Path(__file__).with_name("web")
 app.mount("/assets", StaticFiles(directory=WEB), name="assets")
 app.include_router(demo_router)
-
-
-def connect():
-    db = sqlite3.connect(DATABASE, timeout=10)
-    db.row_factory = sqlite3.Row
-    return db
 
 
 with connect() as db:
@@ -111,7 +103,7 @@ def healthz():
         for row in db.execute("SELECT scope, count(*) AS n FROM contexts GROUP BY scope"):
             counts[row["scope"]] = row["n"]
         return {"status": "ok", "uptime_seconds": int(time.time() - START),
-                "contexts_loaded": counts}
+                "contexts_loaded": counts, "storage_backend": backend()}
 
 
 @app.get("/v1/metadata")

@@ -4,7 +4,8 @@ Open `/` for an interactive website with 10 supplied scenarios. The same service
 
 ## Approach
 
-- `app.py`: five required `/v1/*` endpoints, SQLite state, atomic context version updates, per-recipient suppression, and conversation handling.
+- `app.py`: five required `/v1/*` endpoints, atomic context version updates, per-recipient suppression, and conversation handling.
+- `storage.py`: SQLite on a laptop; PostgreSQL when `DATABASE_URL` is set. The Render Blueprint provisions a free Postgres database and injects its private connection URL.
 - `engine.py`: deterministic message composer using supplied trigger facts, category digests, merchant offers, and customer consent. Placeholder triggers, missing facts, expired events, and unconsented customer sends are skipped.
 - `writer.py`: optional OpenAI wording rewrite of eligible messages with fact checks and automatic fallback. Set `OPENAI_API_KEY` privately on the host; default model is `gpt-4.1-mini`.
 - `demo.py` and `web/`: interactive scenario previews and a conversation mockup. Preview data is synthetic and does not overwrite judge state.
@@ -19,7 +20,7 @@ Start: `python -m uvicorn app:app --host 0.0.0.0 --port 8080`
 
 Check: `http://localhost:8080/` for the website, `http://localhost:8080/v1/healthz` for the API, and `python -m unittest discover -s tests -v`.
 
-Generate additional practice records with `python dataset/generate_dataset.py --seed-dir dataset --out expanded`. Deploy with [`DEPLOY_RENDER.md`](DEPLOY_RENDER.md) and `render.yaml`. Set `VERA_TEAM_NAME`, `VERA_MEMBER_NAME`, and `VERA_CONTACT_EMAIL` before submission; use a **single server worker**.
+Generate additional practice records with `python dataset/generate_dataset.py --seed-dir dataset --out expanded`. Deploy with [`DEPLOY_RENDER.md`](DEPLOY_RENDER.md) and `render.yaml`. Set `VERA_TEAM_NAME`, `VERA_MEMBER_NAME`, and `VERA_CONTACT_EMAIL` before submission; use a **single server worker**. `/v1/healthz` reports `storage_backend` so you can verify the deployed service uses PostgreSQL. If the configured database is unavailable, the service fails rather than silently writing judge state to a temporary SQLite file.
 
 ## Tradeoffs and useful missing data
 
