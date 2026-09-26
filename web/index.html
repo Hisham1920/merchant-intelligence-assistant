@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102e26">
+  <title>Vera Lab · Merchant intelligence demo</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Vera Lab home"><span class="brand-mark">V</span><span>vera<span class="brand-sub">lab</span></span></a>
+      <div class="top-right"><span class="eyebrow">MAGICPIN AI CHALLENGE · SYNTHETIC DEMO</span><span class="status" id="status"><i></i> Connecting</span></div>
+    </header>
+
+    <section class="hero">
+      <div>
+        <div class="kicker"><span class="kicker-line"></span> THE MESSAGE ENGINE</div>
+        <h1>Useful conversations<br><em>start with a good decision.</em></h1>
+        <p>Choose a real challenge scenario. Vera picks a signal, grounds its message in the supplied business facts, and turns a reply into a reviewable next step.</p>
+      </div>
+      <div class="hero-stats"><div><b>05</b><span>Business categories</span></div><div><b>04</b><span>Context layers</span></div><div><b>01</b><span>Clear next step</span></div></div>
+    </section>
+
+    <main class="workspace">
+      <aside class="panel scenario-panel" aria-label="Scenarios">
+        <div class="panel-heading"><div><small>01 / SELECT</small><h2>Live scenarios</h2></div><span id="scenario-count" class="subtle">Loading</span></div>
+        <div class="filters" id="filters" aria-label="Category filters"></div>
+        <div id="scenario-list" class="scenario-list" aria-live="polite"></div>
+      </aside>
+
+      <section class="panel conversation-panel" aria-label="Message preview">
+        <div class="panel-heading"><div><small>02 / COMPOSE</small><h2 id="conversation-title">Choose a scenario</h2></div><span class="demo-tag">PREVIEW ONLY</span></div>
+        <div class="chat-area" id="chat-area">
+          <div class="chat-date">SIMULATED CONVERSATION</div>
+          <div id="empty-state" class="empty-state"><div class="empty-icon">✳</div><h3>One event. One useful message.</h3><p>Select a scenario on the left to see what Vera decides.</p></div>
+          <div id="messages" class="messages" aria-live="polite"></div>
+        </div>
+        <form id="reply-form" class="reply-form" hidden>
+          <label for="reply-input">Try a reply</label>
+          <div class="reply-row"><input id="reply-input" type="text" maxlength="240" placeholder="Try ‘Yes, draft it’ or ‘Stop’" autocomplete="off"><button type="submit" id="reply-button">Send reply <span aria-hidden="true">↗</span></button></div>
+          <p>This is a simulation; no customer or merchant is contacted.</p>
+        </form>
+      </section>
+
+      <aside class="panel insight-panel" aria-label="Decision details">
+        <div class="panel-heading"><div><small>03 / UNDERSTAND</small><h2>Why this message</h2></div></div>
+        <div id="insight-empty" class="insight-empty">Select a scenario to see the evidence behind Vera’s decision.</div>
+        <div id="insight-content" hidden>
+          <div class="decision-card"><span class="decision-label">DECISION</span><strong id="decision-label">—</strong><p id="rationale"></p></div>
+          <div class="detail-section"><h3>Business context</h3><dl id="business-facts"></dl></div>
+          <div class="detail-section"><h3>Event facts received</h3><dl id="event-facts"></dl></div>
+          <div class="detail-section"><h3>Composition</h3><dl id="message-facts"></dl></div>
+        </div>
+      </aside>
+    </main>
+
+    <footer><span>Vera Lab · Challenge prototype</span><span>Built on supplied synthetic data · <a href="/v1/healthz" target="_blank" rel="noopener">API health ↗</a></span></footer>
+  </div>
+</body>
+</html>
