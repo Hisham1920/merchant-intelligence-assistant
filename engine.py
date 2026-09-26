@@ -169,11 +169,15 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
         if not competitor or distance is None:
             return None
         hook = f"{competitor} opened {distance} km from {business}{f' in {locality}' if locality else ''}."
-        ask = "Want a comparison using only your current offer and theirs? Reply YES."
+        if payload.get("their_offer"):
+            hook += f" Their listed offer is {fact(payload['their_offer'])}."
+        if offer:
+            hook += f" Your current offer is {offer}."
+        ask = "Want a draft that explains what makes your service useful without a price war? Reply YES."
         draft_type = "offer comparison"
     elif kind == "festival_upcoming":
         festival, day = payload.get("festival"), date_label(payload.get("date"))
-        if not festival or not day:
+        if not festival or not day or payload.get("days_until", 0) > 45:
             return None
         hook = f"{festival} is on {day}."
         ask = "Want me to draft a relevant post for your business? Reply YES."
@@ -223,15 +227,25 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
         topic = payload.get("intent_topic", "").replace("_", " ")
         if not topic or not payload.get("merchant_last_message"):
             return None
-        hook = f"You asked what a {topic} could look like. Here's a starting outline: target customer, service details, and a price you approve."
-        ask = "I can turn that into customer-ready copy; reply YES to see a draft."
+        if merchant.get("category_slug") == "restaurants" and "thali" in topic:
+            hook = ("For your corporate thali idea, a first draft could list menu choices, "
+                    "group size, delivery area and time, then a price you confirm. "
+                    f"We can position it for offices near {locality}." if locality else
+                    "For your corporate thali idea, a first draft could list menu choices, group size, delivery time and a price you confirm.")
+        elif merchant.get("category_slug") == "gyms" and "kids yoga" in topic:
+            hook = ("For your kids yoga program, let's outline age group, session times, "
+                    "instructor, guardian contact and a fee you approve before advertising it.")
+        else:
+            hook = f"For your {topic} idea, let's outline the audience, service details, timing and a price you approve."
+        ask = "Want customer-ready copy drafted from that outline? Reply YES."
         draft_type = "customer-ready copy"
     elif kind == "category_seasonal":
         trends = payload.get("trends") or []
         if not trends:
             return None
-        hook = f"Your category update flags {fact(trends[0]).replace('_', ' ')} this season."
-        ask = "Want a short shelf or content checklist based on the trend? Reply YES."
+        topics = [re.sub(r"_demand_[+-]?\d+", "", fact(trend)).replace("_", " ") for trend in trends[:3]]
+        hook = f"Your seasonal category update flags demand changes for {', '.join(topics)}."
+        ask = "Want a shelf-check draft for these items, using only stock your team confirms? Reply YES."
         draft_type = "seasonal checklist"
     elif kind == "winback_eligible":
         days = payload.get("days_since_expiry")
@@ -278,7 +292,27 @@ def draft_reply(merchant: dict, category: dict, trigger: dict, customer: dict | 
         return f"Draft reply for {business}: 'Thank you for flagging the {theme}. We will review what happened and follow up with your team directly.' Please check the wording before posting."
     if kind == "active_planning_intent":
         topic = fact(payload.get("intent_topic", "your idea")).replace("_", " ")
+        if merchant.get("category_slug") == "restaurants" and "thali" in topic:
+            return (f"Corporate thali copy for {business}, for your review: 'Planning an office meal? "
+                    "Tell us your group size, preferred menu, delivery area and time. We will confirm "
+                    "the dishes, availability and quote before you order.' Add the actual menu and price after your team approves them.")
+        if merchant.get("category_slug") == "gyms" and "kids yoga" in topic:
+            return (f"Kids yoga program copy for {business}, for your review: 'Interested in yoga for your child? "
+                    "Ask us about the age group, instructor and session schedule. Our team will confirm "
+                    "suitability, places and fees before registration.' Please approve the age range, staff and times before sharing.")
         return f"Starter draft for {business}: '{business} is exploring a {topic}. Tell us what you need and we will confirm the details and price with you.' I have left pricing and availability open for your approval."
+    if kind == "competitor_opened":
+        service = {"dentists": "dental visit", "salons": "salon appointment", "gyms": "fitness session",
+                   "restaurants": "meal", "pharmacies": "pharmacy help"}.get(merchant.get("category_slug"), "service")
+        return (f"Draft for {business}: 'Looking for a {service}? Our current offer is "
+                f"{offer or 'available on request'}. Ask us what it includes and whether it suits you.' "
+                "Please check the service details before posting; this draft does not assume anything about another business.")
+    if kind == "category_seasonal":
+        items = [re.sub(r"_demand_[+-]?\d+", "", fact(s)).replace("_", " ")
+                 for s in (payload.get("trends") or [])[:3]]
+        return (f"Shelf-check draft for {business}: confirm current stock, pack sizes and prices for "
+                f"{', '.join(items)}; place available items where customers can find them; "
+                "ask a pharmacist to review any health advice before sharing a seasonal post. No stock has been checked yet.")
     if kind in {"perf_dip", "perf_spike", "festival_upcoming", "dormant_with_vera", "curious_ask_due"}:
         place = merchant.get("identity", {}).get("locality")
         detail = f"{offer}." if offer else "Ask us about services and current availability."
