@@ -98,8 +98,8 @@ def _run(run_id):
 
 
 def start_if_configured():
-    run_id = os.environ.get("VERA_EVAL_RUN_ID")
-    if not run_id or not os.environ.get("OPENAI_API_KEY"):
+    run_id = os.environ.get("VERA_EVAL_RUN_ID", "baseline-20260927")
+    if not os.environ.get("OPENAI_API_KEY"):
         return
     with connect() as db:
         row = db.execute("SELECT status FROM eval_runs WHERE run_id=?", (run_id,)).fetchone()
@@ -111,9 +111,7 @@ def start_if_configured():
 
 
 def current_report():
-    run_id = os.environ.get("VERA_EVAL_RUN_ID")
-    if not run_id:
-        return {"status": "disabled"}
+    run_id = os.environ.get("VERA_EVAL_RUN_ID", "baseline-20260927")
     with connect() as db:
         row = db.execute("SELECT status,result FROM eval_runs WHERE run_id=?", (run_id,)).fetchone()
     if not row:
