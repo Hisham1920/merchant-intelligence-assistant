@@ -25,6 +25,10 @@ services:
         sync: false
       - key: VERA_LLM_MODEL
         value: gpt-4.1-mini
+      - key: VERA_EVAL_RUN_ID
+        value: baseline-20260927
+      - key: VERA_EVAL_MODEL
+        value: gpt-4.1-mini
 databases:
   - name: magicpin-vera-state
     plan: free

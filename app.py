@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from engine import compose, draft_reply
 from writer import has_model, improve
 from demo import router as demo_router
+from judge_eval import start_if_configured, current_report
 from storage import connect, backend
 from pathlib import Path
 
@@ -51,7 +52,20 @@ with connect() as db:
             occurrences INTEGER DEFAULT 0, PRIMARY KEY (merchant_id, normalized_message));
         CREATE TABLE IF NOT EXISTS compositions (
             input_hash TEXT PRIMARY KEY, body TEXT NOT NULL, rationale TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS eval_runs (
+            run_id TEXT PRIMARY KEY, status TEXT NOT NULL,
+            result TEXT NOT NULL, started_at TEXT NOT NULL);
     """)
+
+
+@app.on_event("startup")
+def start_bounded_evaluation():
+    start_if_configured()
+
+
+@app.get("/demo/evaluation", include_in_schema=False)
+def evaluation_report():
+    return current_report()
 
 
 def load(db, scope, context_id):

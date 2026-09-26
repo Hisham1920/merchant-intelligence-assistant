@@ -2,6 +2,22 @@
 
 **Goal:** Submit one public URL for a working merchant assistant. The same Python service must show a usable demo website and answer the five HTTP calls in magicpin's challenge brief.
 
+## Start here, g — the easy version
+
+Imagine Vera as a helper at a small business. Magicpin gives her **fact sheets** about a type of business, one particular shop, an event, and sometimes a customer. Vera decides if it is a good time to message. If it is, she writes a short message. If someone replies YES, she prepares a draft they can check. She does not really send WhatsApp messages, make bookings, or post on Google in this challenge.
+
+| Word we use | In simple language |
+| --- | --- |
+| **Context** | A fact sheet Magicpin sends us. |
+| **Trigger** | The event that could justify a message, like calls falling this week. |
+| **Tick** | Magicpin asking: “Given these events, should Vera send anything now?” |
+| **API endpoint** | A specific web address where Magicpin sends that question or a reply. |
+| **Database** | Vera's notebook for remembering the fact sheets, past messages, and STOP requests. |
+| **Draft** | Text the merchant can review; it has not been published. |
+| **LLM** | An AI model that can improve writing or act as a practice judge. |
+
+**The five numbers in a judge score** ask: Is the message specific? Does it suit this business type? Does it suit this particular shop? Why is it being sent today? Would someone want to reply? Each gets 0–10. We add them to get a practice score out of 50. A score such as 35/50 is **not** “70% accurate.” We separately count when Vera sends or stays quiet, and we watch for invented facts.
+
 ## What we are building
 
 When an event happens, Vera reads four pieces of information: the business category, the particular merchant, the event, and optionally the customer. It decides whether messaging is appropriate. For useful events it writes a message with one clear next step. When the recipient replies, it drafts a useful response or stops.
@@ -111,6 +127,12 @@ The submitted base URL is `https://magicpin-vera-bot-06ct.onrender.com`, backed 
 - Updated `render.yaml` to define the free `magicpin-vera-state` Postgres service and inject its internal connection string, added the Postgres client dependency, and exposed `storage_backend` in health so deployment can be checked without revealing the connection string.
 - Added `tests/test_restart.py`, which starts two independent Python processes against one SQLite file. The second sees all pushed contexts and does not resend the same trigger. **7/7 local tests pass.** This proves the local restart scenario; the actual Postgres path still needs a live deployment check.
 - Commit `8b450fe` deployed successfully through the existing Render Blueprint. The Blueprint created the free `magicpin-vera-state` database and linked its private connection URL. After the Blueprint rollout, the same public `/v1/healthz` returned HTTP 200 and `"storage_backend":"postgresql"`.
-- Sent **only the supplied synthetic dentists category, version 1**, through the public `/v1/context` endpoint. The response accepted it, and health showed one category stored on Postgres. A documentation-only redeploy will test that this fact sheet survives replacement of the web service; the result is recorded below after the check.
+- Sent **only the supplied synthetic dentists category, version 1**, through the public `/v1/context` endpoint. The response accepted it, and health showed one category stored on Postgres. No merchant, customer, or trigger test records were sent to the deployed service.
 
-**Live restart check:** pending the documentation-only redeploy. The other judge contexts remain empty until the evaluator pushes them. The Postgres free database still has a 30-day lifetime, and the free web service can have long cold starts.
+**Live restart check: passed.** A documentation-only commit (`4353643`) caused Render to replace the web-service process. Its new health response showed a fresh uptime of 22 seconds, `"storage_backend":"postgresql"`, and the same one stored dentists category. The category was saved before this redeploy, so this verifies web-service replacement did not erase the Postgres data. The other judge contexts remain empty until the evaluator pushes them. A free database still expires after 30 days, and the free web service may take 50 seconds or longer to wake from idle. This check did not yet measure the official judge score or simulate a database outage.
+
+## 27 September — measuring message quality, step 2
+
+**What we found:** Magicpin included a local `judge_simulator.py`. It can use Gemini or OpenAI as the *practice judge*. The choice of judge model does not change which model our bot uses to write messages. The simulator prints a number out of 50 and also displays that number divided by 50 as a percentage. That percentage describes the judge's opinion of message quality, not a tested accuracy rate.
+
+**What we are doing now:** We copied their scoring script without modifying it. We chose the same 15 fact-backed cases from the supplied 30 pairs, covering all five business categories. On the deployed server, a limited background run will use the existing private OpenAI key to judge the bot's built-in messages. It will save each score and explanation so we can find the weak cases before changing any wording. An AI failure or unparseable answer must be marked as an error, never converted to a pretend valid score. The public read-only report will be at `/demo/evaluation`. **Status: evaluation code prepared and locally checked; awaiting deployment and actual scores.**
