@@ -202,3 +202,32 @@ The submitted base URL is `https://magicpin-vera-bot-06ct.onrender.com`, backed 
 **Regression check after the final score:** `python3 -m unittest discover -s tests -v` passed **15/15**. These tests cover API behavior, saved state across a restart, opt-out and duplicate suppression, missing facts, offers that do not fit an event, and past appointment slots. `node --check web/app.js` and Python compilation also passed. The live deployed scorecard returned `status: complete`, `scored: 15`, and average `38.13`.
 
 **Next work, led by accuracy:** First, test the complete API with simulated time, context updates, multiple ticks and replies; this practice score only evaluates built-in draft messages. Second, improve factual checks on optional AI rewrites so a number cannot be borrowed from the wrong field. Third, test one complete YES/NO/STOP conversation for each category and check that the draft fulfils the promise in its first message. Fourth, address free-host wake-up delays before a time-limited real judge run. Keep the five-part practice scorecard for comparisons, but use the company's own feedback as the final signal when available.
+
+## Full bot and conversation check — 27 September
+
+**Picture the two jobs separately:** When the judge sends a tick, Vera decides whether there is enough evidence to start a conversation. When a recipient replies, Vera must answer *that specific reply*. A strong first message is not enough if the next answer repeats itself, makes up a fee, or ignores STOP.
+
+### What I actually ran
+
+`full_bot_check.py` starts the actual HTTP server on the laptop with a fresh temporary database and no model key. It generates and sends all supplied synthetic records through `POST /v1/context`: 5 categories, 50 merchants, 200 customers, 100 triggers. It uses the challenge's simulated clock, **26 April 2026 at 10:00 UTC**, because today's real date would make old sample events appear expired. It checks every one of the 30 supplied pairs independently, ticks all 100 triggers at several times, updates one category record, sends YES and STOP replies, then restarts the server to test whether the stop decision survives. It does **not** touch the database at the submitted URL.
+
+| Local functional check | Result | What it means |
+| --- | --- | --- |
+| 30 supplied send/skip pairs | 15 sends, 15 skips | Matched the expected action counts for those sample cases; these cases alone do not determine official accuracy. |
+| All 100 triggers, first tick | 13 sends across all five categories | The bot found eligible actions while respecting one message per recipient and the tick limit. |
+| Same time, five minutes later | 0 and 0 new sends | Repeated ticks did not send duplicates. |
+| After 61 minutes | 7 more eligible actions; no repeated suppression keys | Another eligible event for a recipient can be considered after the cooldown. |
+| Updated category digest | 1 new action including the new fact | The newer version is used when drafting. |
+| YES, Hindi-English cost question, customer YES | Each produced a distinct answer | The merchant receives an event-specific draft; a cost question states the price is unconfirmed; the customer receives a named draft. |
+| STOP, repeat STOP, later tick, restart | Ended, stable answer, 0 future sends after restart | Opt-out survives a process restart. |
+| Warm local HTTP `/v1/tick` | 15.0 ms at the 95th percentile of 36 calls; maximum 18.3 ms | This is local, with the AI key disabled; it says nothing about a free hosted server waking up or remote AI latency. |
+
+**The bug this caught:** A merchant could reply YES to a pharmacy alert and receive a broad summary. If they then asked, “Kitna cost hoga?”, the bot tried to send the *same* summary again, hit its no-repeat guard, and ended the conversation. Now `app.py` checks intent first, uses `engine.py` to write a stock-check draft after YES, and uses a separate `answer_question()` answer when cost is unknown. A customer saying “Haan, details bhejo” gets a named, event-specific draft. We do not claim that stock was checked, a price is approved, or an appointment was booked.
+
+**Five files to know:** `app.py` routes the reply and records STOP; `engine.py` writes the event-specific draft and answers questions; `writer.py` optionally polishes only an approved outgoing message; `demo.py` previews those same reply decisions using bundled examples; `web/app.js` shows the interactive chat. `full_bot_check.py` exercises the actual API instead of only previewing a page. The tests in `tests/test_reply_quality.py` and `tests/test_writer_guard.py` focus on the conversation and factual boundaries. The website now has one-click examples for YES, a question, Hindi-English, and STOP. Pressing STOP closes its simulated input.
+
+**What changed in optional AI wording:** Before sending an approved first message, `writer.py` can request nicer wording. The request supplies the approved draft as the *only fact source*; names and tone can help address it. The validator rejects changed or missing number tokens, missing named offers and source titles, new links, ungrounded “free” or “best” claims, changed up/down direction, and missing recipient names or YES/STOP choices. If it rejects a rewrite or the model is unavailable, Vera sends the original grounded message. Automated checks deliberately try to attach the same price to a different service. These guards reduce common errors; they cannot mathematically prove all rewritten text true.
+
+**Results and limits:** The full local HTTP check passed and `python3 -m unittest discover -s tests -q` passed **24/24**. The earlier **38.13/50** remains the most recent practice *message quality* score. We have not rescored those 15 first messages, which the conversation improvements do not change, and do not have an official accuracy score. The full HTTP check disables the optional AI key to isolate base behavior; local response times cannot predict free hosting cold starts or external model calls. Hidden judge cases may differ from the supplied synthetic cases.
+
+**Next accuracy work:** Compare official judge feedback when available, especially multi-turn conversations and opt-out edge cases. Then exercise model rewrites against deliberately misleading *realistic* offers and dates with the configured model, while tracking how often fallback is used. Separately measure public endpoint wake-up time and check that the hosted application uses persistent storage before a timed judging window.

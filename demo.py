@@ -9,7 +9,7 @@ import time
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from engine import compose, draft_reply
+from engine import compose, draft_reply, reply_intent, answer_question, reply_in_language
 from writer import has_model, improve
 
 
@@ -81,12 +81,23 @@ def preview(body: Preview, request: Request):
     response = {"decision": "send", "message": {k: v for k, v in message.items() if k != "draft_type"},
                 "context": _context(merchant, trigger, customer), "ai_used": ai_used}
     if body.reply.strip():
-        text = body.reply.strip().lower()
-        if "stop" in text or "not interested" in text:
+        text = body.reply.strip()
+        intent = reply_intent(text)
+        if intent in {"stop", "no"}:
             response["followup"] = {"action": "end", "text": "Vera stops this conversation."}
-        elif any(word in text for word in ("yes", "sure", "draft", "go ahead", "let's do it")):
+        elif intent == "yes" or (trigger.get("kind") == "curious_ask_due" and
+                                  any(o.get("status") == "active" and o.get("title") and
+                                      text.casefold() in o["title"].casefold()
+                                      for o in merchant.get("offers", []))):
             response["followup"] = {"action": "send",
-                                    "text": draft_reply(merchant, category, trigger, customer)}
+                                    "text": reply_in_language(draft_reply(merchant, category, trigger, customer,
+                                                                           reply_text=text), text, "yes")}
+        elif intent == "question":
+            response["followup"] = {"action": "send",
+                                    "text": reply_in_language(answer_question(text, merchant, category,
+                                                                                trigger, customer), text, "question")}
+        elif intent == "later":
+            response["followup"] = {"action": "wait", "text": "Vera waits because they asked to speak later."}
         else:
             response["followup"] = {"action": "wait", "text": "Vera pauses until the intent is clear."}
     return response

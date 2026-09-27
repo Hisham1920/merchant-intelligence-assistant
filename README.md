@@ -20,6 +20,8 @@ Start: `python -m uvicorn app:app --host 0.0.0.0 --port 8080`
 
 Check: `http://localhost:8080/` for the website, `http://localhost:8080/v1/healthz` for the API, and `python -m unittest discover -s tests -v`.
 
+Run the complete isolated HTTP check: `python full_bot_check.py --output full_bot_report.json`. This loads the supplied synthetic data into a temporary database, replays all 30 supplied sample pairs, simulates multiple timed ticks, tests YES/questions/STOP and a restart, then writes a JSON report. Its fixed test clock is `2026-04-26T10:00:00Z`; the local run disables the optional model, so its millisecond timings do not predict hosted cold starts or model latency. These checks measure service behavior, not the unknown official judge score.
+
 Generate additional practice records with `python dataset/generate_dataset.py --seed-dir dataset --out expanded`. Deploy with [`DEPLOY_RENDER.md`](DEPLOY_RENDER.md) and `render.yaml`. Set `VERA_TEAM_NAME`, `VERA_MEMBER_NAME`, and `VERA_CONTACT_EMAIL` before submission; use a **single server worker**. `/v1/healthz` reports `storage_backend` so you can verify the deployed service uses PostgreSQL. If the configured database is unavailable, the service fails rather than silently writing judge state to a temporary SQLite file.
 
 For the existing challenge submission, the public URL is `https://magicpin-vera-bot-06ct.onrender.com`. Its Render Blueprint connects the web service to `magicpin-vera-state`; check `storage_backend: postgresql` before relying on durable judge state.

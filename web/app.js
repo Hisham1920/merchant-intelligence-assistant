@@ -81,6 +81,21 @@ function bubble(sender,text,role) {
   el('chat-area').scrollTop=el('chat-area').scrollHeight;
 }
 
+function quickReplies(scenario) {
+  const wrap=el('quick-replies');wrap.replaceChildren();
+  const examples=['Yes, draft it',scenario?.category==='pharmacies'?'Kitna cost hoga?':'What details are confirmed?',
+                  'Haan, details bhejo','STOP'];
+  for(const example of examples){
+    const button=node('button','quick-reply',example);
+    button.type='button';
+    button.addEventListener('click',()=>{
+      el('reply-input').value=example;
+      el('reply-form').requestSubmit();
+    });
+    wrap.append(button);
+  }
+}
+
 function insight(data) {
   el('insight-empty').hidden=true;el('insight-content').hidden=false;
   el('decision-label').textContent=data.decision==='send'?'Send a useful message':'Stay quiet';
@@ -98,6 +113,7 @@ function insight(data) {
 async function selectScenario(id) {
   state.selected=id;renderScenarios();
   const scenario=state.scenarios.find(x=>x.id===id);
+  quickReplies(scenario);
   el('conversation-title').textContent=scenario?.merchant||'Scenario';
   el('messages').replaceChildren();el('empty-state').hidden=true;
   el('reply-form').hidden=true;
@@ -117,7 +133,8 @@ async function selectScenario(id) {
 }
 
 async function sendReply(ev) {
-  ev.preventDefault();const reply=el('reply-input').value.trim();
+  ev.preventDefault();if(el('reply-button').disabled)return;
+  const reply=el('reply-input').value.trim();
   if(!reply||!state.selected)return;
   el('reply-button').disabled=true;
   try{
@@ -127,6 +144,7 @@ async function sendReply(ev) {
     bubble('Merchant or customer',reply,'user');
     if(data.followup?.action==='send')bubble('Vera',data.followup.text,'assistant');
     else el('messages').append(node('div','wait-message',data.followup?.text||'Vera is waiting.'));
+    if(data.followup?.action==='end')el('reply-form').hidden=true;
     el('reply-input').value='';
   }catch(err){el('messages').append(node('div','wait-message',err.message))}
   finally{el('reply-button').disabled=false}

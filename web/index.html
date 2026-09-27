@@ -27,7 +27,7 @@
     <section class="how-it-works" aria-label="How Vera works">
       <div><span class="step-number">01</span><strong>Receive facts</strong><p>Business details, an event, and sometimes customer consent arrive through the challenge API.</p></div>
       <div><span class="step-number">02</span><strong>Decide and draft</strong><p>Vera checks whether the message is supported, then writes a short draft with one useful next step.</p></div>
-      <div><span class="step-number">03</span><strong>Handle a reply</strong><p>Try YES or STOP in the demo. A YES gives a reviewable draft; it does not post or book anything.</p></div>
+      <div><span class="step-number">03</span><strong>Handle a reply</strong><p>Try YES, ask a cost question, or say STOP. A YES gives a tailored draft for review.</p></div>
     </section>
 
     <section class="quality-panel" aria-label="Practice message-quality evaluation">
@@ -51,6 +51,7 @@
         </div>
         <form id="reply-form" class="reply-form" hidden>
           <label for="reply-input">Try a reply</label>
+          <div class="quick-replies" id="quick-replies" aria-label="Example replies"></div>
           <div class="reply-row"><input id="reply-input" type="text" maxlength="240" placeholder="Try ‘Yes, draft it’ or ‘Stop’" autocomplete="off"><button type="submit" id="reply-button">Send reply <span aria-hidden="true">↗</span></button></div>
           <p>This is a simulation; no customer or merchant is contacted.</p>
         </form>

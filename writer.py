@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections import Counter
 from urllib import request, error
 
 
@@ -18,23 +19,32 @@ def improve(message: dict, category: dict, merchant: dict, trigger: dict,
     if not has_model():
         return message
     baseline = message["body"]
+    item_ids = {trigger.get("payload", {}).get(key) for key in ("top_item_id", "digest_item_id", "alert_id")}
+    anchors = [offer["title"] for offer in merchant.get("offers", [])
+               if offer.get("status") == "active" and offer.get("title")
+               and offer["title"].casefold() in baseline.casefold()]
+    for item in category.get("digest", []):
+        if item.get("id") in item_ids:
+            anchors.extend(item[key] for key in ("title", "source")
+                           if item.get(key) and item[key].casefold() in baseline.casefold())
+    anchors.extend(value for key in ("competitor_name", "match", "venue")
+                   if isinstance(value := trigger.get("payload", {}).get(key), str)
+                   and value.casefold() in baseline.casefold())
     context = {
-        "category": {"slug": category.get("slug"), "voice": category.get("voice"),
-                     "digest": [d for d in category.get("digest", [])
-                                if d.get("id") in {trigger.get("payload", {}).get(k)
-                                                    for k in ("top_item_id", "digest_item_id", "alert_id")} ]},
-        "merchant": {"identity": merchant.get("identity"), "performance": merchant.get("performance"),
-                     "offers": merchant.get("offers"), "signals": merchant.get("signals")},
-        "trigger": trigger,
-        "customer": ({"identity": customer.get("identity"), "relationship": customer.get("relationship"),
-                      "preferences": customer.get("preferences") } if customer else None),
+        "category": {"slug": category.get("slug"), "voice": category.get("voice", {}).get("tone")},
+        "merchant": {"identity": {"name": merchant.get("identity", {}).get("name", ""),
+                                   "owner_first_name": merchant.get("identity", {}).get("owner_first_name", "")}},
+        "trigger_kind": trigger.get("kind"),
+        "customer": ({"identity": {"name": customer.get("identity", {}).get("name", "")},
+                      "language_pref": customer.get("identity", {}).get("language_pref") } if customer else None),
+        "fact_anchors": anchors,
         "baseline": baseline,
     }
     rules = ("Rewrite BASELINE into one concise WhatsApp message for the recipient. "
-             "Use only verifiable facts explicitly in BASELINE or CONTEXT. No invented prices, dates, "
-             "appointments, statistics, sources, offers, results, competitor names, URLs, or actions completed. "
-             "Keep one clear CTA and the same YES/STOP options if present. Match category voice and recipient language. "
-             "Avoid marketing hype and medical treatment claims. Do not quote an expired offer. "
+             "Keep every factual claim inside BASELINE, including the exact named offer, source, date, price, "
+             "direction and metric. The other context is for greeting and tone only; never add facts from it. "
+             "Preserve all numbers, currency amounts and the YES/STOP choices. Match recipient language. "
+             "Avoid marketing hype, medical claims, new promises and actions completed. "
              "Return JSON with only body and rationale. Make body useful and specific.")
     endpoint = os.getenv("VERA_LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/")
     data = json.dumps({"model": os.getenv("VERA_LLM_MODEL", "gpt-4.1-mini"),
@@ -67,15 +77,30 @@ def valid(body: str, baseline: str, context: dict) -> bool:
         return False
     if re.search(r"\b(guaranteed|already (published|sent|booked)|i (published|sent|booked))\b", body, re.I):
         return False
-    baseline_numbers = set(re.findall(r"\d+(?:[.,]\d+)*(?:%|km)?", json.dumps(context, ensure_ascii=False)))
-    for number in re.findall(r"\d+(?:[.,]\d+)*(?:%|km)?", body):
-        if number not in baseline_numbers:
-            return False
-    if re.search(r"https?://", body) and not re.search(r"https?://", json.dumps(context)):
+    if any(re.search(pattern, body, re.I) and not re.search(pattern, baseline, re.I)
+           for pattern in (r"\bfree\b", r"\b(best|top-rated|limited time|guaranteed|cure|published|booked)\b")):
         return False
+    numeric = re.compile(r"(?<![\w])(?:₹\s*)?\d+(?:[.,]\d+)*(?:\s?%|\s?km)?", re.I)
+    def tokens(value):
+        return Counter(re.sub(r"\s+", "", match.group()).lower() for match in numeric.finditer(value))
+    expected, actual = tokens(baseline), tokens(body)
+    if actual - expected or expected - actual:
+        return False
+    if any(anchor.casefold() not in body.casefold() for anchor in context.get("fact_anchors", [])):
+        return False
+    if re.search(r"https?://", body) and not re.search(r"https?://", baseline):
+        return False
+    for change in ("up", "down", "rose", "fell", "rising", "falling"):
+        if re.search(r"\b" + change + r"\b", body, re.I) and not re.search(r"\b" + change + r"\b", baseline, re.I):
+            return False
     identity = context["customer"]["identity"] if context["customer"] else context["merchant"]["identity"]
-    recipient = identity.get("name", "")
+    recipient = identity.get("name", "") or ""
     merchant_name = context["merchant"]["identity"].get("name", "")
-    if recipient and recipient.casefold().split()[0] not in body.casefold() and merchant_name.casefold() not in body.casefold():
+    owner_name = context["merchant"]["identity"].get("owner_first_name", "")
+    words = recipient.casefold().split()
+    distinctive = words[1] if len(words) > 1 and words[0].rstrip(".") == "dr" else (words[0] if words else "")
+    if distinctive and distinctive not in body.casefold() and merchant_name.casefold() not in body.casefold() and (not owner_name or owner_name.casefold() not in body.casefold()):
+        return False
+    if context["customer"] and distinctive and distinctive not in body.casefold():
         return False
     return True

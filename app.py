@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from engine import compose, draft_reply
+from engine import compose, draft_reply, reply_intent, answer_question, reply_in_language
 from writer import has_model, improve
 from demo import router as demo_router
 from judge_eval import start_if_configured, current_report
@@ -247,10 +247,6 @@ def tick(body: Tick):
 
 
 AUTO_TEXT = re.compile(r"thank you for contacting|our team will (respond|reply)|automated assistant|out of office|we have received your (message|query)", re.I)
-STOP_TEXT = re.compile(r"\b(stop|unsubscribe|opt\s*out|do not message|don't message|no more messages)\b", re.I)
-NO_TEXT = re.compile(r"\b(not interested|no thanks|leave me alone|useless spam)\b", re.I)
-YES_TEXT = re.compile(r"\b(yes|yeah|sure|go ahead|let'?s do it|okay do it|ok lets do it|send me|draft it|please do|what'?s next|confirm)\b", re.I)
-LATER_TEXT = re.compile(r"\b(later|busy|tomorrow|next week)\b", re.I)
 
 
 @app.post("/v1/reply")
@@ -274,12 +270,14 @@ def reply(body: Reply):
         trigger = load(db, "trigger", row["trigger_id"]) if row and row["trigger_id"] else None
         previous_body = row["last_body"] if row else ""
         normalized = re.sub(r"\s+", " ", incoming.casefold())
+        intent = reply_intent(incoming)
+        now = parse_time(body.received_at) if body.received_at else datetime.now(timezone.utc)
 
-        if STOP_TEXT.search(incoming):
+        if intent == "stop":
             if recipient:
                 db.execute("INSERT OR IGNORE INTO opt_out(recipient) VALUES(?)", (recipient,))
             answer = {"action": "end", "rationale": "Explicit stop request recorded."}
-        elif NO_TEXT.search(incoming):
+        elif intent == "no":
             if recipient:
                 db.execute("INSERT OR IGNORE INTO opt_out(recipient) VALUES(?)", (recipient,))
             answer = {"action": "end", "rationale": "Merchant/customer declined; end without another pitch."}
@@ -294,20 +292,24 @@ def reply(body: Reply):
                       if count >= 2 else
                       {"action": "wait", "wait_seconds": 1800,
                        "rationale": "Likely WhatsApp Business auto-reply; allow a human time to respond."})
-        elif LATER_TEXT.search(incoming):
+        elif intent == "later":
             answer = {"action": "wait", "wait_seconds": 1800,
                       "rationale": "Recipient requested time; pause."}
         elif re.search(r"\b(file my gst|gst return|tax filing)\b", incoming, re.I):
             answer = {"action": "send", "body": "I can help with your business messages and drafts here. For GST filing, please check with your accountant.",
                       "cta": "none", "rationale": "Answer off-topic request honestly without claiming tax expertise."}
-        elif YES_TEXT.search(incoming):
-            draft = draft_reply(merchant or {}, category or {}, trigger or {}, customer)
-            answer = {"action": "send", "body": draft, "cta": "none",
+        elif intent == "yes" or (trigger and trigger.get("kind") == "curious_ask_due" and
+                                  any(o.get("status") == "active" and o.get("title") and
+                                      len(incoming) <= 35 and re.search(re.escape(incoming), o["title"], re.I)
+                                      for o in (merchant or {}).get("offers", []))):
+            draft = draft_reply(merchant or {}, category or {}, trigger or {}, customer,
+                                now=now, reply_text=incoming)
+            answer = {"action": "send", "body": reply_in_language(draft, incoming, "yes"), "cta": "none",
                       "rationale": "Recipient accepted; supplied a reviewable draft or concrete next step without claiming to have published it."}
-        elif "?" in incoming or re.search(r"\b(how|why|what|price|cost|details|abstract)\b", incoming, re.I):
-            draft = draft_reply(merchant or {}, category or {}, trigger or {}, customer)
-            answer = {"action": "send", "body": draft, "cta": "none",
-                      "rationale": "Replied to the question with available context, leaving unsupported details for human confirmation."}
+        elif intent == "question":
+            explanation = answer_question(incoming, merchant or {}, category or {}, trigger or {}, customer, now=now)
+            answer = {"action": "send", "body": reply_in_language(explanation, incoming, "question"), "cta": "none",
+                      "rationale": "Answered the actual question from supplied facts and named any missing detail."}
         else:
             answer = {"action": "wait", "wait_seconds": 1800,
                       "rationale": "Unclear reply; pause instead of repeating or guessing."}

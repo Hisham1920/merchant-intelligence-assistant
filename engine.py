@@ -389,47 +389,206 @@ def _message(body, cta, send_as, trigger, kind, draft_type):
     }
 
 
-def draft_reply(merchant: dict, category: dict, trigger: dict, customer: dict | None = None):
-    """Produce an honest preview of work the bot can complete without external integrations."""
+def reply_intent(incoming: str) -> str:
+    """Read short English and Hindi-English choices before generating a reply."""
+    if re.search(r"\b(stop|unsubscribe|opt\s*out|do not message|don't message|no more messages|band karo|mat bhejo|message band|msg band)\b", incoming, re.I):
+        return "stop"
+    if re.search(r"\b(not interested|no thanks|leave me alone|useless spam|nahi chahiye|nahin chahiye)\b", incoming, re.I) or re.fullmatch(r"\s*(?:no|nahi|nahin)\s*[.!]?\s*", incoming, re.I):
+        return "no"
+    if re.search(r"\b(later|busy|tomorrow|next week|baad mein|baad me|kal baat)\b", incoming, re.I):
+        return "later"
+    if re.search(r"\b(yes|yeah|sure|go ahead|let'?s do it|okay do it|ok lets do it|haan|han|haanji|bilkul|thik hai|theek hai)\b", incoming, re.I):
+        return "yes"
+    if "?" in incoming or re.search(r"\b(how|why|what|when|where|price|cost|details|abstract|kitna|kitni|kitne|kab|kaise|kya|fees|daam|timing|available)\b", incoming, re.I):
+        return "question"
+    if re.search(r"\b(send me|draft it|please do|confirm it|kar do|bana do|bhejo|bhej do)\b", incoming, re.I):
+        return "yes"
+    return "other"
+
+
+def reply_in_language(text: str, incoming: str, intent: str) -> str:
+    """Use a small Hindi-English framing when the recipient used Hindi-English."""
+    if re.search(r"\b(haan|han|haanji|bilkul|bhejo|bhej|kitna|kitni|kitne|kab|kaise|kya|daam|batao|thik hai|theek hai)\b", incoming, re.I):
+        return ("Bilkul, yeh draft review ke liye hai: " if intent == "yes" else
+                "Jo details abhi available hain: ") + text
+    return text
+
+
+def draft_reply(merchant: dict, category: dict, trigger: dict, customer: dict | None = None,
+                now: datetime | None = None, reply_text: str = ""):
+    """Make the promised draft or concrete next step from the approved event facts."""
     kind = trigger.get("kind", "")
     payload = trigger.get("payload") or {}
     business = merchant.get("identity", {}).get("name", "your business")
+    place = merchant.get("identity", {}).get("locality", "")
+    location = f" in {place}" if place else ""
     offer = active_offer(merchant)
-    if kind in {"research_digest", "regulation_change", "cde_opportunity", "supply_alert"}:
-        item = digest_item(category, payload.get("top_item_id") or payload.get("digest_item_id") or payload.get("alert_id"))
-        if item:
-            return f"Draft summary for your review: {item.get('title', '')}. {item.get('summary', '')} Source supplied: {item.get('source', 'not listed')}. I can edit this before you share it."
-    if kind == "review_theme_emerged":
-        theme = fact(payload.get("theme", "the issue")).replace("_", " ")
-        return f"Draft reply for {business}: 'Thank you for flagging the {theme}. We will review what happened and follow up with your team directly.' Please check the wording before posting."
+    item = digest_item(category, payload.get("top_item_id") or payload.get("digest_item_id") or payload.get("alert_id"))
+    if kind == "supply_alert" and item:
+        batches = payload.get("affected_batches") or []
+        codes = ", ".join(map(str, batches)) if batches else "the listed batch numbers"
+        return (f"Stock-check draft for {business}: compare stock and invoices against {codes}; "
+                f"ask a pharmacist to verify the supplied {item.get('source', 'alert')} before deciding on affected items. "
+                "Record matches and contact the distributor if confirmed. Stock has not been checked.")
+    if kind == "regulation_change" and item:
+        deadline = date_label(payload.get("deadline_iso"))
+        return (f"Clinic checklist draft: review your X-ray equipment and film or sensor records against "
+                f"the supplied {item.get('source', 'guidance')}; confirm whether it applies to {business}; "
+                f"record what needs updating{f' before {deadline}' if deadline else ''}. "
+                "Verify the original circular before changing clinical practice.")
+    if kind == "cde_opportunity" and item:
+        return (f"Webinar brief for {business}: {item.get('title', 'CDE event')} on {date_label(item.get('date'))}; "
+                f"{payload.get('credits') or item.get('credits', 'listed')} CDE credits. "
+                f"{item.get('actionable', 'Confirm registration details with the organizer')}. "
+                "Check the organizer's calendar before registering.")
+    if kind == "research_digest" and item:
+        return (f"Draft summary for {business}: the supplied {item.get('source', 'digest')} lists "
+                f"'{item.get('title', 'this update')}'. {item.get('summary', '')} "
+                "Review the original research and patient fit before sharing clinical advice.")
     if kind == "active_planning_intent":
         topic = fact(payload.get("intent_topic", "your idea")).replace("_", " ")
         if merchant.get("category_slug") == "restaurants" and "thali" in topic:
-            return (f"Corporate thali copy for {business}, for your review: 'Planning an office meal? "
-                    "Tell us your group size, preferred menu, delivery area and time. We will confirm "
-                    "the dishes, availability and quote before you order.' Add the actual menu and price after your team approves them.")
+            return (f"Customer copy draft for {business}: 'Planning an office thali meal{location}? "
+                    "Tell us your group size, delivery area and preferred time. We will confirm menu, availability "
+                    "and a separate bulk quote before you order.' "
+                    + ("Your listed weekday lunch price is not a group quote." if offer and "thali" in offer.lower()
+                       else "Confirm the group price before sharing."))
         if merchant.get("category_slug") == "gyms" and "kids yoga" in topic:
-            return (f"Kids yoga program copy for {business}, for your review: 'Interested in yoga for your child? "
-                    "Ask us about the age group, instructor and session schedule. Our team will confirm "
-                    "suitability, places and fees before registration.' Please approve the age range, staff and times before sharing.")
-        return f"Starter draft for {business}: '{business} is exploring a {topic}. Tell us what you need and we will confirm the details and price with you.' I have left pricing and availability open for your approval."
-    if kind == "competitor_opened":
-        service = {"dentists": "dental visit", "salons": "salon appointment", "gyms": "fitness session",
-                   "restaurants": "meal", "pharmacies": "pharmacy help"}.get(merchant.get("category_slug"), "service")
-        return (f"Draft for {business}: 'Looking for a {service}? Our current offer is "
-                f"{offer or 'available on request'}. Ask us what it includes and whether it suits you.' "
-                "Please check the service details before posting; this draft does not assume anything about another business.")
+            return (f"Customer copy draft for {business}: 'Interested in a kids yoga program{location}? "
+                    "Ask our team about age suitability, instructor and session times. We will confirm places and fees "
+                    "before registration.' The age range, schedule and price still need your approval.")
+        return (f"Customer copy draft for {business}: 'We are exploring {topic}. Tell us what you need and "
+                "our team will confirm timing, availability and price.' Approve the details before sharing.")
     if kind == "category_seasonal":
-        items = [re.sub(r"_demand_[+-]?\d+", "", fact(s)).replace("_", " ")
-                 for s in (payload.get("trends") or [])[:3]]
-        return (f"Shelf-check draft for {business}: confirm current stock, pack sizes and prices for "
-                f"{', '.join(items)}; place available items where customers can find them; "
-                "ask a pharmacist to review any health advice before sharing a seasonal post. No stock has been checked yet.")
-    if kind in {"perf_dip", "perf_spike", "festival_upcoming", "dormant_with_vera", "curious_ask_due"}:
-        place = merchant.get("identity", {}).get("locality")
-        detail = f"{offer}." if offer else "Ask us about services and current availability."
-        location = f" in {place}" if place else ""
-        return f"Google post draft for your review: '{business}{location} — {detail} Message us for details.' This is a draft; it has not been published."
+        rising, falling = trend_topics(payload.get("trends") or [])
+        return (f"Shelf-check draft for {business}: verify actual stock and pack prices for "
+                f"{', '.join(rising + falling)}. Give priority to the rising items if available, "
+                "and ask a pharmacist to check any health advice. No stock has been checked.")
+    if kind == "gbp_unverified":
+        path = payload.get("verification_path", "")
+        modes = "postcard or phone option, if offered" if path == "postcard_or_phone_call" else "available option"
+        return (f"Verification checklist for {business}: open your Google Business Profile, confirm its details, "
+                f"check the {modes}, and complete the steps shown there. No verification has been submitted.")
+    if kind == "review_theme_emerged":
+        theme = fact(payload.get("theme", "the concern")).replace("_", " ")
+        count = payload.get("occurrences_30d")
+        return (f"Review reply draft for {business}: 'Thank you for pointing out the {theme}. "
+                "Please message our team with the details so we can look into your experience.' "
+                f"Team action: investigate the {count} recent mentions before making a public promise.")
+    if kind == "competitor_opened":
+        detail = f" Our currently listed offer is {offer}." if offer else ""
+        return (f"Customer post draft for {business}{location}: 'Looking for a {category_label(merchant)}? "
+                f"Ask our team which service fits your needs and what it includes.{detail}' "
+                "Confirm offer eligibility before sharing; do not make claims about another business.")
+    if kind == "ipl_match_today":
+        return (f"Match-day post draft: '{payload.get('match', 'The match')} is scheduled on "
+                f"{date_label(payload.get('match_time_iso'))}. Planning a pizza night{location}? "
+                f"Ask {business} about today's confirmed menu and prices.' "
+                "Check opening hours before posting; no promotion has been assumed.")
+    if kind == "milestone_reached":
+        goal = payload.get("milestone_value")
+        return (f"Review-request draft for {business}: 'Thank you for visiting. "
+                "If you would like to share an honest review, it helps other customers know what to expect.' "
+                f"The profile shows {payload.get('value_now')} reviews; {goal} is the next milestone. "
+                "Do not offer rewards for reviews.")
+    if kind == "curious_ask_due":
+        selected = next((o["title"] for o in merchant.get("offers", [])
+                         if o.get("status") == "active" and o.get("title")
+                         and re.search(re.escape(reply_text.strip()), o["title"], re.I)), None) if reply_text.strip() and len(reply_text.strip()) <= 35 else None
+        if selected:
+            return (f"Google post draft for {business}{location}: '{selected}. "
+                    "Message our team to confirm current availability and terms.' "
+                    "Please review before publishing; this does not claim it is your most requested service.")
+        if offer:
+            return (f"Google post draft for {business}{location}: '{offer}. "
+                    "Ask our team for current details.' This uses an existing listed offer; "
+                    "choose the most requested service yourself before publishing.")
+    if kind in {"perf_dip", "seasonal_perf_dip", "perf_spike", "dormant_with_vera", "festival_upcoming"}:
+        feature = f"{offer}. " if offer and kind == "perf_spike" else ""
+        return (f"Google post draft for {business}{location}: '{feature}Ask us about our current "
+                f"{category_label(merchant)} services and availability.' "
+                "Check the details before publishing; no post has been published.")
+    if kind == "renewal_due":
+        return (f"Renewal summary draft for {business}: your {payload.get('plan', 'current')} plan shows "
+                f"{payload.get('days_remaining')} days remaining. Check the current price, included services "
+                "and renewal date in your account before deciding; no renewal was made.")
+    if kind == "winback_eligible":
+        return (f"Account review for {business}: the supplied record shows the plan expired "
+                f"{payload.get('days_since_expiry')} days ago. Check the current status and any changes "
+                "in your account before choosing a new plan; no renewal was made.")
     if customer:
-        return f"I can help {business} with this request. A team member must confirm any appointment, delivery, or price before it is booked."
-    return f"Draft for {business}: 'We are ready to help with {offer or 'your next visit'}. Message us for current details.' Please review before posting; I have not published or sent anything."
+        name = customer.get("identity", {}).get("name", "there")
+        if kind == "recall_due":
+            due = date_label(payload.get("due_date"))
+            slot = recall_slot(payload, now)
+            option = f" {slot} is listed as an option to verify." if slot else ""
+            return (f"Draft reply for {name}: 'Your follow-up at {business} is due around {due}.{option} "
+                    "Please ask the clinic to confirm a suitable time.' No appointment has been booked.")
+        if kind == "chronic_refill_due":
+            return (f"Draft reply for {name}: 'Your refill reminder is around "
+                    f"{date_label(payload.get('stock_runs_out_iso'))}. Ask {business} to check your "
+                    "prescription, stock and delivery details before confirming.' No medicine was ordered.")
+        if kind == "customer_lapsed_hard":
+            focus = fact(payload.get("previous_focus", "your earlier goal")).replace("_", " ")
+            slot = fact(customer.get("preferences", {}).get("preferred_slots", "")).replace("_", " ")
+            return (f"Draft reply for {name}: 'Welcome back to {business}. We can check "
+                    f"{slot + ' ' if slot else ''}sessions that suit your {focus} goal. "
+                    "The team will confirm availability before any booking.'")
+        if kind == "trial_followup":
+            return (f"Draft reply for {name}: 'Thanks for trying {business} on "
+                    f"{date_label(payload.get('trial_date'))}. Tell us your preferred time and "
+                    "the team can check the next session.' No place has been reserved.")
+        if kind == "wedding_package_followup":
+            return (f"Prep-plan draft for {name}: 'Ahead of {date_label(payload.get('wedding_date'))}, "
+                    f"ask {business} to review your trial notes, the service you want, and a suitable schedule.' "
+                    "The team must confirm suitability, availability and price.")
+        return (f"Draft reply for {name}: '{business} can check a suitable next visit with you." 
+                " Please confirm timing and price with the team.' No booking has been made.")
+    return (f"Draft for {business}: '{business}{location} can help you with available services. "
+            "Message our team for confirmed details.' Review before publishing; nothing has been sent.")
+
+
+def answer_question(question: str, merchant: dict, category: dict, trigger: dict,
+                    customer: dict | None = None, now: datetime | None = None) -> str:
+    """Answer a specific question from known facts, or state the missing fact."""
+    payload = trigger.get("payload") or {}
+    kind = trigger.get("kind", "")
+    business = merchant.get("identity", {}).get("name", "the business")
+    if re.search(r"\b(price|cost|fee|fees|charge|rate|kitna|kitni|kitne|daam|paisa)\b", question, re.I):
+        item = digest_item(category, payload.get("top_item_id") or payload.get("digest_item_id"))
+        if kind == "cde_opportunity" and item and item.get("actionable"):
+            return f"The supplied event lists: {item['actionable']}. Please confirm the current fee with the organizer."
+        if customer:
+            return f"I don't have a confirmed price for your visit or refill. Please ask {business} to confirm it before booking or ordering."
+        if kind == "active_planning_intent":
+            return ("A price for the new plan hasn't been confirmed. "
+                    + ("The listed weekday lunch thali price is a separate offer; " if active_offer(merchant) and
+                       "thali" in active_offer(merchant).lower() else "") +
+                    "please approve a group quote first." if "thali" in payload.get("intent_topic", "") else
+                    "A fee for this new program hasn't been approved yet. Please set it before sharing the draft.")
+        offer = active_offer(merchant)
+        if offer and kind in {"competitor_opened", "perf_spike", "curious_ask_due"}:
+            return f"{business} currently lists {offer}. This may not cover the service you mean; confirm eligibility and the final price with the team."
+        return f"I don't have a confirmed price for that service. Please verify it with {business} before sharing a quote."
+    if re.search(r"\b(when|date|time|timing|slot|available|kab|samay)\b", question, re.I):
+        item = digest_item(category, payload.get("digest_item_id") or payload.get("top_item_id"))
+        if kind == "recall_due":
+            option = recall_slot(payload, now)
+            return (f"The follow-up is due around {date_label(payload.get('due_date'))}. "
+                    + (f"{option} is listed as an option; ask {business} to confirm it." if option else
+                       f"I don't have a current open slot; ask {business} to confirm one."))
+        if kind == "cde_opportunity" and item and item.get("date"):
+            return f"The supplied calendar lists {date_label(item['date'])}. Please confirm the exact time with the organizer."
+        if kind == "ipl_match_today" and payload.get("match_time_iso"):
+            return f"The supplied schedule lists {date_label(payload['match_time_iso'])}; check the event organizer for the latest time."
+        return f"I don't have a confirmed time or availability. Please check with {business} before making plans."
+    if kind in {"research_digest", "regulation_change", "cde_opportunity", "supply_alert"}:
+        item = digest_item(category, payload.get("top_item_id") or payload.get("digest_item_id") or payload.get("alert_id"))
+        if item:
+            return (f"The supplied {item.get('source', 'category note')} is about {item.get('title', 'this update')}. "
+                    "Please verify the original source before changing clinical care or stock handling.")
+    if kind == "active_planning_intent":
+        return (f"The next step is a draft for {business}; the audience, timing, availability and "
+                "price still need your approval. Nothing has been advertised.")
+    return (f"I don't have that answer in the supplied details for {business}. "
+            "The team should confirm it; I can help draft a message using what we do know.")
