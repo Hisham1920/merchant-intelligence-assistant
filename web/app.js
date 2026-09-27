@@ -21,6 +21,31 @@ function row(target,key,value) {
   target.append(div);
 }
 
+async function loadEvaluation() {
+  try {
+    const res=await fetch('/demo/evaluation');
+    if(!res.ok)throw Error(`HTTP ${res.status}`);
+    const report=await res.json();
+    const summary=report.summary;
+    if(!summary?.scored){
+      el('quality-score').textContent=report.status==='running'?'Judge check in progress':'Judge check pending';
+      if(report.status==='running')setTimeout(loadEvaluation,15000);
+      return;
+    }
+    const total=summary.average_out_of_50;
+    el('quality-score').textContent=`${total.toFixed(2)} / 50 · ${summary.scored} messages`;
+    el('quality-description').textContent=`${report.status==='complete'?'Completed':'In progress'} with ${report.judge_model} on supplied synthetic examples. This is a practice message-quality score, not Magicpin’s official result or measured accuracy.`;
+    const labels={specificity:'Concrete facts',category_fit:'Category voice',merchant_fit:'Merchant fit',decision_quality:'Why now',engagement_compulsion:'Likely to reply'};
+    const wrap=el('quality-dimensions');wrap.replaceChildren();
+    for(const [key,label] of Object.entries(labels)){
+      const box=node('div');
+      box.append(node('strong','',`${(summary.dimensions[key]||0).toFixed(2)} / 10`),node('span','',label));
+      wrap.append(box);
+    }
+    if(report.status==='running')setTimeout(loadEvaluation,15000);
+  }catch(err){el('quality-score').textContent='Judge score temporarily unavailable';el('quality-description').textContent='The demo below still works. Try the scorecard link again later.'}
+}
+
 function filters() {
   const wrap = el('filters'); wrap.replaceChildren();
   for (const category of ['all','dentists','salons','restaurants','gyms','pharmacies']) {
@@ -110,6 +135,7 @@ async function sendReply(ev) {
 async function startup(){
   el('reply-form').addEventListener('submit',sendReply);
   filters();
+  loadEvaluation();
   try{
     const [scenarios,health]=await Promise.all([fetch('/demo/scenarios').then(r=>r.json()),fetch('/v1/healthz').then(r=>r.json())]);
     state.scenarios=scenarios.scenarios;

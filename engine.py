@@ -41,6 +41,28 @@ def date_label(value):
         return fact(value)
 
 
+def plain_window(value):
+    label = fact(value)
+    return f"{label[:-1]} days" if re.fullmatch(r"\d+d", label) else label or "the latest period"
+
+
+def category_label(merchant):
+    if merchant.get("category_slug") == "gyms" and "yoga" in merchant.get("identity", {}).get("name", "").lower():
+        return "yoga studio"
+    return {"dentists": "clinic", "salons": "salon", "restaurants": "restaurant",
+            "gyms": "gym", "pharmacies": "pharmacy"}.get(merchant.get("category_slug"), "business")
+
+
+def trend_topics(trends):
+    """Read the direction in a supplied trend token without guessing its units."""
+    rising, falling = [], []
+    for trend in trends[:4]:
+        match = re.fullmatch(r"(.+)_demand_([+-])\d+", fact(trend))
+        if match:
+            (rising if match.group(2) == "+" else falling).append(match.group(1).replace("_", " "))
+    return rising, falling
+
+
 def consent_allows(customer, kind):
     if not customer or customer.get("preferences", {}).get("channel", "whatsapp") != "whatsapp":
         return False
@@ -90,30 +112,35 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
             if not due:
                 return None
             hook = f"Your follow-up for {fact(payload.get('service_due', 'your last visit')).replace('_', ' ')} is due around {due}."
-            ask = "Would you like us to help arrange a visit? Reply YES, or STOP for no reminders."
+            ask = "Would you like the clinic to check a suitable visit near then? Reply YES, or STOP for no reminders."
         elif kind == "appointment_tomorrow":
             slot = payload.get("appointment_iso") or payload.get("appointment_at")
             if not slot:
                 return None
-            hook = f"A visit is scheduled for {date_label(slot)}."
+            try:
+                parsed = datetime.fromisoformat(slot.replace("Z", "+00:00"))
+                time_label = parsed.strftime("%d %b at %I:%M %p").replace(" at 0", " at ")
+            except ValueError:
+                time_label = date_label(slot)
+            hook = f"A visit is scheduled for {time_label}."
             ask = "Can you make it? Reply YES to confirm or STOP to stop reminders."
         elif kind == "trial_followup":
             day = date_label(payload.get("trial_date"))
             if not day:
                 return None
-            hook = f"Following up after your trial on {day}."
+            hook = f"Following up after your trial at {business} on {day}."
             ask = "Would you like details of the next session? Reply YES or STOP."
         elif kind == "chronic_refill_due":
             day = date_label(payload.get("stock_runs_out_iso"))
             if not day:
                 return None
-            hook = f"A refill reminder is due around {day}."
+            hook = f"Your refill reminder is due around {day}."
             ask = "Would you like the pharmacy to help with your usual refill? Reply YES or STOP."
         elif kind == "wedding_package_followup":
             day = date_label(payload.get("wedding_date"))
             if not day:
                 return None
-            hook = f"Checking in after your bridal trial ahead of {day}."
+            hook = f"Checking in after your bridal trial ahead of your {day} wedding."
             ask = "Want a draft prep plan to review? Reply YES or STOP."
             draft_type = "bridal prep plan"
         elif kind in {"customer_lapsed_soft", "customer_lapsed_hard"}:
@@ -130,7 +157,7 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
         else:
             return None
         if customer.get("identity", {}).get("language_pref") in {"hi", "hi-en mix"}:
-            ask = "Aap interested hain toh YES reply karein; reminders band karne ke liye STOP."
+            ask = "Aap chahen toh YES reply karein; messages band karne ke liye STOP."
         body = hello + hook + " " + ask
         return _message(body, cta, "merchant_on_behalf", trigger, kind, draft_type)
 
@@ -142,14 +169,19 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
             return None
         source = item.get("source")
         hook = f"{item.get('title', 'A new item')}" + (f" ({source})." if source else ".")
-        if kind == "regulation_change":
+        if kind == "research_digest":
+            if item.get("patient_segment") == "high_risk_adults" and "high_risk_adult_cohort" in merchant.get("signals", []):
+                hook += " This may be relevant to the high-risk adults you see; check the study before changing recall intervals."
+            ask = "Want a concise evidence summary for your practice? Reply YES."
+            draft_type = "evidence summary"
+        elif kind == "regulation_change":
             hook += f" Deadline: {date_label(payload.get('deadline_iso'))}." if payload.get("deadline_iso") else ""
-            ask = "Want a short checklist of what to review? Reply YES."
+            ask = "Want a short checklist for reviewing your own X-ray equipment against the supplied guidance? Reply YES." if merchant.get("category_slug") == "dentists" else "Want a short checklist for reviewing what applies to your business? Reply YES."
             draft_type = "review checklist"
         elif kind == "supply_alert":
             batches = payload.get("affected_batches") or []
             hook += f" Listed batches: {', '.join(map(str, batches))}." if batches else ""
-            ask = "Want a stock-check checklist drafted? Reply YES."
+            ask = "Want a batch-check draft for your pharmacy team? Reply YES."
             draft_type = "stock check checklist"
         elif kind == "cde_opportunity" and item.get("date"):
             credits = payload.get("credits") or item.get("credits")
@@ -168,17 +200,25 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
         if not metric or not change:
             return None
         direction = "down" if float(payload["delta_pct"]) < 0 else "up"
-        hook = f"Your {metric} are {direction} {change} over {payload.get('window', 'the latest period')}."
+        hook = f"Your {fact(metric).replace('_', ' ')} are {direction} {change} over {plain_window(payload.get('window'))}."
         if kind == "seasonal_perf_dip" and payload.get("is_expected_seasonal"):
             hook += " This may be seasonal; it is worth checking before changing your offer."
-        ask = "Want me to draft one focused Google post using your current offer? Reply YES." if offer else "Want me to draft one focused Google post for review? Reply YES."
+        driver = fact(payload.get("likely_driver", "")).replace("_", " ")
+        if kind == "perf_spike" and driver:
+            hook += f" The supplied event points to your {driver} as a possible driver."
+        if offer and kind == "perf_spike":
+            ask = f"Want a {category_label(merchant)} post draft for {locality or business} using your current offer? Reply YES."
+        elif merchant.get("category_slug") == "dentists":
+            ask = "Want a patient-friendly post draft for your clinic to review? Reply YES."
+        else:
+            ask = "Want one focused Google post draft that you can review before sharing? Reply YES."
         draft_type = "Google post"
     elif kind == "review_theme_emerged":
         theme, count = payload.get("theme"), payload.get("occurrences_30d")
         if not theme or count is None:
             return None
         hook = f"{count} reviews mentioned {fact(theme).replace('_', ' ')} in the last 30 days."
-        ask = "Want me to draft a practical reply and one action to address it? Reply YES."
+        ask = f"Want a reply draft for {business} and one action for your team to consider? Reply YES."
         draft_type = "review reply"
     elif kind == "competitor_opened":
         competitor, distance = payload.get("competitor_name"), payload.get("distance_km")
@@ -189,41 +229,45 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
             hook += f" Their listed offer is {fact(payload['their_offer'])}."
         if offer:
             hook += f" Your current offer is {offer}."
-        ask = "Want a draft that explains what makes your service useful without a price war? Reply YES."
+        ask = "Want a patient-friendly draft highlighting your own cleaning offer? Reply YES." if merchant.get("category_slug") == "dentists" and offer and "cleaning" in offer.lower() else "Want a draft about your own service without a price war? Reply YES."
         draft_type = "offer comparison"
     elif kind == "festival_upcoming":
         festival, day = payload.get("festival"), date_label(payload.get("date"))
         if not festival or not day or payload.get("days_until", 0) > 45:
             return None
         hook = f"{festival} is on {day}."
-        ask = "Want me to draft a relevant post for your business? Reply YES."
+        ask = f"Want a {category_label(merchant)} post for {locality} drafted for review? Reply YES." if locality else "Want a relevant post for your business drafted for review? Reply YES."
         draft_type = "festival post"
     elif kind == "ipl_match_today":
         if not payload.get("match") or not payload.get("match_time_iso"):
             return None
         hook = f"{payload['match']} is scheduled at {payload.get('venue', 'the stadium')} on {date_label(payload['match_time_iso'])}."
-        ask = "Want a match-day post drafted with details you approve? Reply YES."
+        if merchant.get("category_slug") == "restaurants" and "pizza" in business.lower():
+            ask = f"Want a match-night pizza post for {business}{' in ' + locality if locality else ''}, using menu details you confirm? Reply YES."
+        else:
+            ask = f"Want a match-day post for {business} drafted with details you approve? Reply YES."
         draft_type = "match-day post"
     elif kind == "milestone_reached":
         value, goal = payload.get("value_now"), payload.get("milestone_value")
         if value is None or goal is None:
             return None
-        metric = payload.get("metric", "reviews").replace("_", " ")
+        metric = "reviews" if payload.get("metric") == "review_count" else payload.get("metric", "reviews").replace("_", " ")
         hook = f"You are at {value} {metric}, {max(0, goal - value)} away from {goal}."
-        ask = "Want a review-request draft for recent customers? Reply YES."
+        ask = f"Want a thank-you and review-request draft for recent {business} customers? Reply YES."
         draft_type = "review request"
     elif kind == "renewal_due":
         days = payload.get("days_remaining")
         if days is None:
             return None
         hook = f"Your {payload.get('plan', 'subscription')} plan has {days} days remaining."
-        ask = "Want a concise summary of your renewal details? Reply YES."
+        ask = "Want a concise summary of the plan and deadline for your review? Reply YES."
         draft_type = "renewal summary"
     elif kind == "gbp_unverified":
         if payload.get("verified") is not False:
             return None
-        hook = "Your Google Business Profile is marked unverified."
-        ask = "Want the verification steps listed for review? Reply YES."
+        hook = f"The Google Business Profile for {business}{' in ' + locality if locality else ''} is marked unverified."
+        path = payload.get("verification_path")
+        ask = "Want a short guide to which postcard or phone verification option applies? Reply YES." if path == "postcard_or_phone_call" else "Want the verification steps listed for review? Reply YES."
         draft_type = "verification steps"
     elif kind == "dormant_with_vera":
         days = payload.get("days_since_last_merchant_message")
@@ -233,7 +277,7 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
         calls_delta = (merchant.get("performance", {}).get("delta_7d") or {}).get("calls_pct")
         if isinstance(calls_delta, (int, float)) and calls_delta < 0:
             hook += f" Your calls also fell {percent(calls_delta)} over the last 7 days."
-        ask = "Would a fresh draft for your Google listing help? Reply YES."
+        ask = f"Want a fresh listing post for {business}{' in ' + locality if locality else ''}, using only services you confirm? Reply YES."
         draft_type = "Google post"
     elif kind == "curious_ask_due":
         if not payload.get("ask_template"):
@@ -255,9 +299,13 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
                     "group size, delivery area and time, then a price you confirm. "
                     f"We can position it for offices near {locality}." if locality else
                     "For your corporate thali idea, a first draft could list menu choices, group size, delivery time and a price you confirm.")
+            if offer and "thali" in offer.lower():
+                hook += f" Your listed {offer} can be a reference, while you confirm the separate group price."
         elif merchant.get("category_slug") == "gyms" and "kids yoga" in topic:
             hook = ("For your kids yoga program, let's outline age group, session times, "
-                    "instructor, guardian contact and a fee you approve before advertising it.")
+                    "instructor, guardian contact and a fee you approve before advertising it."
+                    f" We can frame it for families near {locality}." if locality else
+                    "For your kids yoga program, let's outline age group, times, instructor and a fee you approve.")
         else:
             hook = f"For your {topic} idea, let's outline the audience, service details, timing and a price you approve."
         ask = "Want customer-ready copy drafted from that outline? Reply YES."
@@ -266,9 +314,16 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
         trends = payload.get("trends") or []
         if not trends:
             return None
-        topics = [re.sub(r"_demand_[+-]?\d+", "", fact(trend)).replace("_", " ") for trend in trends[:3]]
-        hook = f"Your seasonal category update flags demand changes for {', '.join(topics)}."
-        ask = "Want a shelf-check draft for these items, using only stock your team confirms? Reply YES."
+        rising, falling = trend_topics(trends)
+        if not rising and not falling:
+            return None
+        rising = ["cold and cough" if x == "cold cough" else x for x in rising]
+        falling = ["cold and cough" if x == "cold cough" else x for x in falling]
+        hook = f"Your seasonal update shows demand rising for {', '.join(rising)}" if rising else "Your seasonal update shows changing demand"
+        if falling:
+            hook += f" and falling for {', '.join(falling)}"
+        hook += "."
+        ask = f"Want a shelf-check draft for {business}{' in ' + locality if locality else ''}, after your team confirms actual stock? Reply YES."
         draft_type = "seasonal checklist"
     elif kind == "winback_eligible":
         days = payload.get("days_since_expiry")
@@ -283,7 +338,7 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
     if not hook:
         return None
     prefix = f"{name}, " if name else ""
-    if offer and kind in {"perf_dip", "perf_spike", "festival_upcoming"}:
+    if offer and kind == "perf_spike":
         hook += f" Your active offer is {offer}."
     body = f"{prefix}{hook} {ask}"
     return _message(body, cta, "vera", trigger, kind, draft_type)

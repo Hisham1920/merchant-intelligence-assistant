@@ -24,6 +24,17 @@
       <div class="hero-stats"><div><b>05</b><span>Business categories</span></div><div><b>04</b><span>Context layers</span></div><div><b>01</b><span>Clear next step</span></div></div>
     </section>
 
+    <section class="how-it-works" aria-label="How Vera works">
+      <div><span class="step-number">01</span><strong>Receive facts</strong><p>Business details, an event, and sometimes customer consent arrive through the challenge API.</p></div>
+      <div><span class="step-number">02</span><strong>Decide and draft</strong><p>Vera checks whether the message is supported, then writes a short draft with one useful next step.</p></div>
+      <div><span class="step-number">03</span><strong>Handle a reply</strong><p>Try YES or STOP in the demo. A YES gives a reviewable draft; it does not post or book anything.</p></div>
+    </section>
+
+    <section class="quality-panel" aria-label="Practice message-quality evaluation">
+      <div class="quality-intro"><small>MESSAGE QUALITY · PRACTICE EVALUATION</small><h2 id="quality-score">Loading the judge check…</h2><p id="quality-description">The same 15 synthetic messages are checked against five criteria. This is an estimated quality score, not an official accuracy result.</p><a href="/demo/evaluation" target="_blank" rel="noopener">Read the per-message feedback ↗</a></div>
+      <div class="quality-dimensions" id="quality-dimensions" aria-live="polite"></div>
+    </section>
+
     <main class="workspace">
       <aside class="panel scenario-panel" aria-label="Scenarios">
         <div class="panel-heading"><div><small>01 / SELECT</small><h2>Live scenarios</h2></div><span id="scenario-count" class="subtle">Loading</span></div>
@@ -57,7 +68,7 @@
       </aside>
     </main>
 
-    <footer><span>Vera Lab · Challenge prototype</span><span>Built on supplied synthetic data · <a href="/v1/healthz" target="_blank" rel="noopener">API health ↗</a></span></footer>
+    <footer><span>Vera Lab · Challenge prototype</span><span>Built on supplied synthetic data · <a href="/v1/healthz" target="_blank" rel="noopener">API health ↗</a> · <a href="/docs" target="_blank" rel="noopener">API guide ↗</a></span></footer>
   </div>
 </body>
 </html>
