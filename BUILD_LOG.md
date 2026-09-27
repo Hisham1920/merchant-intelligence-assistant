@@ -107,7 +107,7 @@ The **website** reads 10 bundled sample scenarios through `demo.py` and makes a 
 
 **Time caveat:** the supplied sample events mostly describe April–June 2026, whereas today's real date is September 2026. The 30-pair check deliberately used the dataset's April simulated clock. If somebody runs the supplied simulator unchanged today, its clock uses the current UTC time and most old triggers will correctly be expired, giving a misleading quality comparison. The competition API uses the `now` value sent on each judge tick.
 
-## Improvement plan, in priority order
+## Original improvement plan from 26 September (progress recorded below)
 
 1. **Make the evaluation trustworthy.** Create a controlled test run with the judge's simulated clock, fresh state, measured response time, and a table of all 30 cases. If a scoring key is available to a local judge, use the provided LLM simulator to obtain scores by dimension. Keep judge scoring separate from our service-pass rate.
 2. **Protect the evaluation run.** The current `render.yaml` stores SQLite at `/tmp/vera.sqlite3`; that file can disappear on instance replacement or redeploy. Move judge state to durable storage before relying on it through restarts, then rehearse warmup and a full hour of ticks. Check free-host cold-start behavior against the judge's five-second health request and 30-second action timeout.
@@ -168,4 +168,37 @@ The submitted base URL is `https://magicpin-vera-bot-06ct.onrender.com`, backed 
 
 **The uncertainty in those numbers:** Some *unchanged* messages received different scores across the two calls, including the restaurant match-day message (35 then 32). AI judges are variable. The evidence supports a better result on this practice set, particularly in the revised weak cases, but it does not prove the same gain on secret tests or reveal the official score. The scorecard evaluates `engine.py`'s built-in draft messages. It does not score the optional `writer.py` rewrite, a full hour of judge ticks, customer conversations, abstentions, or API latency. The model judged the supplied synthetic facts as given; we did not independently verify the dataset's webinar and compliance claims.
 
-**What you can do next:** Open `/demo/evaluation` for the live second report. The saved `vera_baseline_scorecard.json` and `vera_improved_scorecard.json` let you compare message bodies and five scores case by case. We can next test the complete API through the simulator with a private judge key, and decide whether a Gemini comparison is worth the extra account and cost. Our bot does **not** need Gemini just because other people chose it to *grade* their local runs.
+**What you can do next:** Open `/demo/evaluation` for the latest live report. The saved `vera_baseline_scorecard.json` and `vera_improved_scorecard.json` preserve the earlier message bodies and five scores case by case. We can next test the complete API through the simulator with a private judge key, and decide whether a Gemini comparison is worth the extra account and cost. Our bot does **not** need Gemini just because other people chose it to *grade* their local runs.
+
+## 27 September — making the messages fit each merchant, step 3
+
+**The simple idea:** A good message answers three small questions: *Who is this for? What actually happened? What useful thing can they do next?* The answers must come from the supplied data. If a fact is missing, we leave it out instead of guessing. This matters more than fancy wording.
+
+| Business type | Example of a more personal message | Fact we deliberately do not assume |
+| --- | --- | --- |
+| Dentist | Bharat's Andheri West practice has a recorded 50% call decline; its listing is marked unverified. Offer a listing checklist and patient-friendly post draft. | We cannot say the unverified listing **caused** the decline. |
+| Salon | Studio11's calls rose 20% in the last seven days. Ask which service customers are requesting so its owner can get a relevant post draft. | We cannot claim a specific salon service caused the rise. |
+| Restaurant | The Delhi IPL match has a supplied time; SK Pizza Junction is in Sant Nagar. Offer a pizza post with menu details the owner confirms. | Its Tuesday–Thursday promotion is **not** advertised for a Sunday match. |
+| Gym / yoga studio | Rashmi preferred weekday evenings and previously focused on weight loss. Offer to **check** options for returning. | Her old membership does not prove she qualifies for the currently advertised free trial. |
+| Pharmacy | The seasonal update lists rising demand for ORS, sunscreen and antifungal items, and falling demand for cold and cough products. Offer an Apollo stock-check draft. | Demand trends do not prove this pharmacy actually has those products in stock; a trend code does not explicitly state percentage units. |
+
+**What changed in the code:** In `engine.py`, `compose()` now adds useful details only to the matching event type. For example, a match includes its stated time, a milestone uses the actual review number, and a reminder uses the customer's consent and recorded preferences. `recall_slot()` checks a proposed slot against the supplied tick time; if the slot has passed, the message does not offer it. `plain_window()` turns `7d` into “7 days,” and `trend_topics()` reads the supplied up/down direction without inventing a percent sign. The main `/v1/tick` path in `app.py` passes the judge's simulated time to `compose()`, so the expiry guard uses the judge's clock.
+
+**What changed at the submitted URL:** The original URL, `https://magicpin-vera-bot-06ct.onrender.com`, stays the same. Render deploys commits from our connected GitHub branch to that address. On the homepage, `web/index.html`, `web/style.css`, and `web/app.js` now explain the three bot steps and load the latest practice score with its **five** component scores. A link opens the detailed per-message feedback at `/demo/evaluation`. The homepage and API documentation describe the demo; the challenge's five `/v1/*` endpoints still serve the evaluation. A live check returned HTTP 200 for the homepage and health endpoint, showed Postgres as storage, and returned the completed final scorecard.
+
+**Measured results, same 15 synthetic cases and same OpenAI practice judge:**
+
+| Dimension (each out of 10) | Previous round | Final merchant-specific round |
+| --- | ---: | ---: |
+| Concrete, checkable facts | 7.47 | **8.07** |
+| Right voice for the business type | 7.67 | **8.00** |
+| Fit for this particular merchant | 7.73 | **7.93** |
+| Reason to message now | 7.07 | **7.47** |
+| Would they reply? | 6.53 | **6.67** |
+| **Total out of 50** | **36.47** | **38.13** |
+
+38.13/50 means **76.26% of available practice rubric points**. It clears our informal 35/50 target (70% of points). It does **not** mean 76.26% accuracy, a guaranteed score floor, or an official result. An intermediate run after the first batch of edits scored 36.40/50; we examined its weak cases, revised the wording and ran the same 15 messages again. AI scores fluctuate: the salon question kept the same text and score, while another unchanged message received a different score. On the final comparison, the kids-yoga planning case dropped one point and several others improved. All five average dimensions improved, but the sample is small and the judge may use another model.
+
+**Regression check after the final score:** `python3 -m unittest discover -s tests -v` passed **15/15**. These tests cover API behavior, saved state across a restart, opt-out and duplicate suppression, missing facts, offers that do not fit an event, and past appointment slots. `node --check web/app.js` and Python compilation also passed. The live deployed scorecard returned `status: complete`, `scored: 15`, and average `38.13`.
+
+**Next work, led by accuracy:** First, test the complete API with simulated time, context updates, multiple ticks and replies; this practice score only evaluates built-in draft messages. Second, improve factual checks on optional AI rewrites so a number cannot be borrowed from the wrong field. Third, test one complete YES/NO/STOP conversation for each category and check that the draft fulfils the promise in its first message. Fourth, address free-host wake-up delays before a time-limited real judge run. Keep the five-part practice scorecard for comparisons, but use the company's own feedback as the final signal when available.
