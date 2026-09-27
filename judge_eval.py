@@ -45,7 +45,8 @@ def sample_cases():
         merchant = merchants[trigger["merchant_id"]]
         customer = customers.get(trigger.get("customer_id"))
         category = categories[merchant["category_slug"]]
-        message = compose(category, merchant, trigger, customer)
+        message = compose(category, merchant, trigger, customer,
+                          now=datetime.fromisoformat("2026-04-26T10:00:00+00:00"))
         if message is None:
             raise ValueError(f"Baseline case {test_id} is no longer eligible")
         yield test_id, message, category, merchant, trigger, customer
@@ -98,7 +99,7 @@ def _run(run_id):
 
 
 def start_if_configured():
-    run_id = os.environ.get("VERA_EVAL_RUN_ID", "merchant-specific-20260927")
+    run_id = os.environ.get("VERA_EVAL_RUN_ID", "merchant-specific-v2-20260927")
     if not os.environ.get("OPENAI_API_KEY"):
         return
     with connect() as db:
@@ -111,7 +112,7 @@ def start_if_configured():
 
 
 def current_report():
-    run_id = os.environ.get("VERA_EVAL_RUN_ID", "merchant-specific-20260927")
+    run_id = os.environ.get("VERA_EVAL_RUN_ID", "merchant-specific-v2-20260927")
     with connect() as db:
         row = db.execute("SELECT status,result FROM eval_runs WHERE run_id=?", (run_id,)).fetchone()
     if not row:

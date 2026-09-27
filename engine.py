@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import re
 
 
@@ -63,6 +63,24 @@ def trend_topics(trends):
     return rising, falling
 
 
+def recall_slot(payload, now=None):
+    """Mention a supplied appointment option only while it remains in the future."""
+    try:
+        due = datetime.fromisoformat(payload["due_date"].replace("Z", "+00:00"))
+        for option in payload.get("available_slots") or []:
+            slot = datetime.fromisoformat(option["iso"].replace("Z", "+00:00"))
+            current = now or datetime.now(timezone.utc)
+            if slot.tzinfo and due.tzinfo is None:
+                due = due.replace(tzinfo=slot.tzinfo)
+            if slot.tzinfo and current.tzinfo is None:
+                current = current.replace(tzinfo=timezone.utc)
+            if current < slot and abs(slot - due) <= timedelta(days=14):
+                return slot.strftime("%d %b at %I:%M %p").replace(" at 0", " at ")
+    except (KeyError, TypeError, ValueError):
+        return ""
+    return ""
+
+
 def consent_allows(customer, kind):
     if not customer or customer.get("preferences", {}).get("channel", "whatsapp") != "whatsapp":
         return False
@@ -82,7 +100,8 @@ def consent_allows(customer, kind):
     return bool(scopes & allowed) and customer.get("preferences", {}).get("reminder_opt_in", True)
 
 
-def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None = None) -> dict | None:
+def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None = None,
+            now: datetime | None = None) -> dict | None:
     """Return a grounded message, or None when the supplied facts cannot support one."""
     kind = trigger.get("kind", "")
     payload = trigger.get("payload") or {}
@@ -111,7 +130,11 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
             due = date_label(payload.get("due_date"))
             if not due:
                 return None
-            hook = f"Your follow-up for {fact(payload.get('service_due', 'your last visit')).replace('_', ' ')} is due around {due}."
+            service = re.sub(r"(\d+)_month", r"\1-month", fact(payload.get("service_due", "your last visit"))).replace("_", " ")
+            hook = f"Your follow-up for {service} is due around {due}."
+            slot = recall_slot(payload, now)
+            if slot:
+                hook += f" We have {slot} listed as an option; we can check whether it is still open."
             ask = "Would you like the clinic to check a suitable visit near then? Reply YES, or STOP for no reminders."
         elif kind == "appointment_tomorrow":
             slot = payload.get("appointment_iso") or payload.get("appointment_at")
@@ -151,13 +174,15 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
             focus = payload.get("previous_focus") or customer.get("preferences", {}).get("training_focus")
             if merchant.get("category_slug") == "gyms" and focus:
                 hook += f" You previously focused on {fact(focus).replace('_', ' ')}."
-                ask = "Want us to suggest a suitable session after checking availability? Reply YES, or STOP to stop messages."
+                preferred = fact(customer.get("preferences", {}).get("preferred_slots", "")).replace("_", " ")
+                ask = (f"Want us to check {preferred} options to ease back in? Reply YES, or STOP to stop messages."
+                       if preferred else "Want us to suggest a suitable session after checking availability? Reply YES, or STOP to stop messages.")
             else:
                 ask = "Would you like to hear about a suitable next visit? Reply YES or STOP."
         else:
             return None
         if customer.get("identity", {}).get("language_pref") in {"hi", "hi-en mix"}:
-            ask = "Aap chahen toh YES reply karein; messages band karne ke liye STOP."
+            ask = "Time check karna ho toh YES reply karein; reminders band karne ke liye STOP." if kind == "recall_due" else "Aap chahen toh YES reply karein; messages band karne ke liye STOP."
         body = hello + hook + " " + ask
         return _message(body, cta, "merchant_on_behalf", trigger, kind, draft_type)
 
@@ -201,6 +226,10 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
             return None
         direction = "down" if float(payload["delta_pct"]) < 0 else "up"
         hook = f"Your {fact(metric).replace('_', ' ')} are {direction} {change} over {plain_window(payload.get('window'))}."
+        if kind == "perf_dip" and merchant.get("category_slug") == "dentists" and locality:
+            hook = f"Calls to your {locality} dental practice are down {change} over {plain_window(payload.get('window'))}." if metric == "calls" else hook
+            if "unverified_gbp" in merchant.get("signals", []):
+                hook += " Your Google listing is also marked unverified."
         if kind == "seasonal_perf_dip" and payload.get("is_expected_seasonal"):
             hook += " This may be seasonal; it is worth checking before changing your offer."
         driver = fact(payload.get("likely_driver", "")).replace("_", " ")
@@ -209,7 +238,7 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
         if offer and kind == "perf_spike":
             ask = f"Want a {category_label(merchant)} post draft for {locality or business} using your current offer? Reply YES."
         elif merchant.get("category_slug") == "dentists":
-            ask = "Want a patient-friendly post draft for your clinic to review? Reply YES."
+            ask = "Want a short listing checklist and patient-friendly post draft for your clinic? Reply YES." if "unverified_gbp" in merchant.get("signals", []) else "Want a patient-friendly post draft for your clinic to review? Reply YES."
         else:
             ask = "Want one focused Google post draft that you can review before sharing? Reply YES."
         draft_type = "Google post"
@@ -241,7 +270,12 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
     elif kind == "ipl_match_today":
         if not payload.get("match") or not payload.get("match_time_iso"):
             return None
-        hook = f"{payload['match']} is scheduled at {payload.get('venue', 'the stadium')} on {date_label(payload['match_time_iso'])}."
+        try:
+            match_time = datetime.fromisoformat(payload["match_time_iso"].replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+        start_time = match_time.strftime("%I:%M %p").lstrip("0")
+        hook = f"{payload['match']} is scheduled at {payload.get('venue', 'the stadium')} on {date_label(payload['match_time_iso'])} at {start_time}."
         if merchant.get("category_slug") == "restaurants" and "pizza" in business.lower():
             ask = f"Want a match-night pizza post for {business}{' in ' + locality if locality else ''}, using menu details you confirm? Reply YES."
         else:

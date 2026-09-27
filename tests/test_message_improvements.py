@@ -1,6 +1,7 @@
 """Keep the scorecard improvements tied to actual supplied facts."""
 
 from copy import deepcopy
+from datetime import datetime, timezone
 import unittest
 
 from engine import compose
@@ -65,6 +66,22 @@ class MessageImprovementTests(unittest.TestCase):
         no_driver = deepcopy(trigger)
         no_driver["payload"].pop("likely_driver")
         self.assertNotIn("kids yoga post", compose(category, merchant, no_driver, customer)["body"])
+
+    def test_recall_does_not_offer_a_past_slot(self):
+        category, merchant, trigger, customer = self.cases["T28"]
+        earlier = compose(category, merchant, trigger, customer,
+                          now=datetime(2026, 11, 1, tzinfo=timezone.utc))["body"]
+        later = compose(category, merchant, trigger, customer,
+                        now=datetime(2026, 11, 7, tzinfo=timezone.utc))["body"]
+        self.assertIn("05 Nov", earlier)
+        self.assertNotIn("05 Nov", later)
+        self.assertIn("12 Nov", later)
+
+    def test_bad_match_time_skips_instead_of_crashing(self):
+        category, merchant, trigger, customer = self.cases["T21"]
+        broken = deepcopy(trigger)
+        broken["payload"]["match_time_iso"] = "not-a-date"
+        self.assertIsNone(compose(category, merchant, broken, customer))
 
 
 if __name__ == "__main__":

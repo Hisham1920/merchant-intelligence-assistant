@@ -177,7 +177,7 @@ def eligible_action(db, trigger_id, now):
     recipient = customer_id or merchant_id
     if db.execute("SELECT 1 FROM opt_out WHERE recipient=?", (recipient,)).fetchone():
         return None
-    message = compose(category, merchant, trigger, customer)
+    message = compose(category, merchant, trigger, customer, now=now)
     if not message:
         return None
     suppression = message["suppression_key"]
