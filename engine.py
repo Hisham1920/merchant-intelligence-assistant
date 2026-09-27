@@ -397,9 +397,11 @@ def reply_intent(incoming: str) -> str:
         return "no"
     if re.search(r"\b(later|busy|tomorrow|next week|baad mein|baad me|kal baat)\b", incoming, re.I):
         return "later"
+    if "?" in incoming or re.search(r"\b(how|why|what|when|where|price|cost|fees|kitna|kitni|kitne|kab|kaise|kya|daam|timing)\b", incoming, re.I):
+        return "question"
     if re.search(r"\b(yes|yeah|sure|go ahead|let'?s do it|okay do it|ok lets do it|haan|han|haanji|bilkul|thik hai|theek hai)\b", incoming, re.I):
         return "yes"
-    if "?" in incoming or re.search(r"\b(how|why|what|when|where|price|cost|details|abstract|kitna|kitni|kitne|kab|kaise|kya|fees|daam|timing|available)\b", incoming, re.I):
+    if re.search(r"\b(details|abstract|available)\b", incoming, re.I):
         return "question"
     if re.search(r"\b(send me|draft it|please do|confirm it|kar do|bana do|bhejo|bhej do)\b", incoming, re.I):
         return "yes"

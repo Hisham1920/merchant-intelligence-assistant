@@ -16,6 +16,7 @@ class ReplyQualityTests(unittest.TestCase):
     def test_hinglish_yes_and_cost_question_have_separate_intents(self):
         self.assertEqual(reply_intent("Haan, details bhejo"), "yes")
         self.assertEqual(reply_intent("Kitna cost hoga?"), "question")
+        self.assertEqual(reply_intent("Haan, but kitna cost hoga?"), "question")
         self.assertEqual(reply_intent("What is next?"), "question")
         self.assertEqual(reply_intent("message band karo"), "stop")
 
