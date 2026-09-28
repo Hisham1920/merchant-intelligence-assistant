@@ -71,6 +71,12 @@ class WriterGuardTests(unittest.TestCase):
         self.assertFalse(valid(baseline.replace("marked unverified", "marked verified"),
                                baseline, context))
 
+    def test_ai_cannot_append_a_new_cause_or_completed_action(self):
+        baseline, context = self.context_for("T24")
+        self.assertFalse(valid(baseline + " The listing caused the decline.", baseline, context))
+        self.assertFalse(valid(baseline.replace("Want a short", "We fixed the listing; want a short"),
+                               baseline, context))
+
     def test_safe_cta_wording_can_still_change(self):
         baseline, context = self.context_for("T24")
         candidate = baseline.replace("Want a short listing checklist and patient-friendly post draft for your clinic?",

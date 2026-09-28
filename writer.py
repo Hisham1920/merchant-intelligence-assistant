@@ -73,12 +73,18 @@ def improve(message: dict, category: dict, merchant: dict, trigger: dict,
 def valid(body: str, baseline: str, context: dict) -> bool:
     if len(body) < 25 or len(body) > 550 or body.count("?") > 1:
         return False
+    if len(re.split(r"(?<=[.!?])\s+", body)) > len(re.split(r"(?<=[.!?])\s+", baseline)):
+        return False
     if "YES" in baseline and "yes" not in body.casefold():
         return False
     if "STOP" in baseline and "stop" not in body.casefold():
         return False
     if re.search(r"\b(guaranteed|already (published|sent|booked)|i (published|sent|booked))\b", body, re.I):
         return False
+    for claim in (r"\b(caused|causes|fixed|checked|confirmed|completed)\b",
+                  r"\bwill (recover|increase|improve|sell out)\b"):
+        if re.search(claim, body, re.I) and not re.search(claim, baseline, re.I):
+            return False
     if any(re.search(pattern, body, re.I) and not re.search(pattern, baseline, re.I)
            for pattern in (r"\bfree\b", r"\b(best|top-rated|limited time|guaranteed|cure|published|booked)\b")):
         return False
