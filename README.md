@@ -1,6 +1,10 @@
-# Vera challenge bot — working website and API
+# Merchant Intelligence Assistant (Vera)
 
-Open `/` for an interactive website with 10 supplied scenarios. The same service accepts category, merchant, trigger, and customer JSON from the judge at five `/v1/*` endpoints. It selects a grounded trigger, returns a WhatsApp-style message or stays quiet, and handles replies. It does **not** send real WhatsApp messages or change a merchant's Google profile.
+[Try the live demo](https://magicpin-vera-bot-06ct.onrender.com) · [API documentation](https://magicpin-vera-bot-06ct.onrender.com/docs)
+
+Vera is an AI-assisted merchant engagement prototype built for the magicpin AI challenge. It uses supplied business and event context to decide when to send a relevant WhatsApp-style message, when to stay quiet, and how to handle YES, questions, Hindi-English replies and STOP. The website has 10 interactive synthetic scenarios. It does **not** send real WhatsApp messages, book appointments, or change a merchant's Google profile.
+
+The service exposes five `/v1/*` endpoints for the challenge's context, tick, reply, health and metadata calls. In an isolated local HTTP check it loaded 355 synthetic contexts, replayed 30 supplied send/skip pairs, exercised timed ticks and reply handling, and passed 24 automated tests. The separate 38.13/50 figure shown on the site is an OpenAI **practice message-quality rubric**, not an official accuracy score.
 
 ## Approach
 
@@ -28,4 +32,4 @@ For the existing challenge submission, the public URL is `https://magicpin-vera-
 
 ## Tradeoffs and useful missing data
 
-The rule-based message remains available if the optional AI request fails. It abstains on generated dataset `placeholder: true` triggers rather than claiming an event took place. The most useful extra context would be approved offers, real appointment availability, verified sources for digest items, and permission to publish a draft after merchant approval. The public deployment URL and your team contact email must be filled in on Render.
+The rule-based message remains available if the optional AI request fails. It abstains on generated dataset `placeholder: true` triggers rather than claiming an event took place. The most useful extra context would be approved offers, real appointment availability, verified sources for digest items, and permission to publish a draft after merchant approval. For a fresh deployment, set the team contact email privately on Render.
