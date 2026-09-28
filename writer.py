@@ -41,8 +41,10 @@ def improve(message: dict, category: dict, merchant: dict, trigger: dict,
         "baseline": baseline,
     }
     rules = ("Rewrite BASELINE into one concise WhatsApp message for the recipient. "
-             "Keep every factual claim inside BASELINE, including the exact named offer, source, date, price, "
-             "direction and metric. The other context is for greeting and tone only; never add facts from it. "
+             "Keep factual sentences verbatim, especially any sentence containing an event, status, "
+             "metric, date, price or offer. You may polish the greeting and call to action; if no safe "
+             "polish is possible, return BASELINE unchanged. The other context is for greeting and tone "
+             "only; never add facts from it. "
              "Preserve all numbers, currency amounts and the YES/STOP choices. Match recipient language. "
              "Avoid marketing hype, medical claims, new promises and actions completed. "
              "Return JSON with only body and rationale. Make body useful and specific.")
@@ -86,6 +88,25 @@ def valid(body: str, baseline: str, context: dict) -> bool:
     expected, actual = tokens(baseline), tokens(body)
     if actual - expected or expected - actual:
         return False
+    # Keep factual statements attached to their subjects. A bag of equal numbers
+    # cannot tell whether two prices or dates were exchanged in a rewrite.
+    fact_words = re.compile(
+        r"\b(?:verified|unverified|offer|listed|scheduled|effective|due|rose|fell|"
+        r"rising|falling|up|down|opened|demand|marked|credits|last visit|points to)\b", re.I)
+    normalized_body = " ".join(body.casefold().split())
+    for sentence in re.split(r"(?<=[.!?])\s+", baseline):
+        sentence = sentence.strip()
+        if (numeric.search(sentence) or fact_words.search(sentence)) and " ".join(
+            sentence.rstrip(".!?").casefold().split()
+        ) not in normalized_body:
+            return False
+    # These words often reverse the meaning of an otherwise unchanged fact.
+    for word in ("verified", "unverified", "available", "unavailable", "confirmed",
+                 "expired", "not", "never", "only"):
+        if len(re.findall(r"\b" + word + r"\b", body, re.I)) > len(
+            re.findall(r"\b" + word + r"\b", baseline, re.I)
+        ):
+            return False
     if any(anchor.casefold() not in body.casefold() for anchor in context.get("fact_anchors", [])):
         return False
     if re.search(r"https?://", body) and not re.search(r"https?://", baseline):
