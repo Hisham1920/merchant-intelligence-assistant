@@ -1,5 +1,5 @@
 const icons = {dentists:'✦',salons:'✂',restaurants:'◈',gyms:'↗',pharmacies:'✚'};
-const state = {scenarios:[],selected:null,filter:'all',ai:false,preview:null};
+const state = {scenarios:[],selected:null,filter:'all',aiAvailable:false,aiSelected:false,preview:null,previewRequest:0};
 const el = id => document.getElementById(id);
 
 function node(tag, cls, content) {
@@ -111,6 +111,7 @@ function insight(data) {
 }
 
 async function selectScenario(id) {
+  const requestId=++state.previewRequest;
   state.selected=id;renderScenarios();
   const scenario=state.scenarios.find(x=>x.id===id);
   quickReplies(scenario);
@@ -120,16 +121,16 @@ async function selectScenario(id) {
   el('insight-empty').hidden=false;el('insight-content').hidden=true;
   const waiting=node('div','wait-message','Evaluating the event…');el('messages').append(waiting);
   try{
-    const res=await fetch('/demo/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({trigger_id:id,ai:state.ai})});
+    const res=await fetch('/demo/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({trigger_id:id,ai:state.aiSelected})});
     if(!res.ok)throw Error((await res.json()).detail||`HTTP ${res.status}`);
     const data=await res.json();
-    if(state.selected!==id)return;
+    if(state.selected!==id||requestId!==state.previewRequest)return;
     state.preview=data;el('messages').replaceChildren();insight(data);
     if(data.decision==='send'){
       bubble(data.message.send_as==='vera'?'Vera':'Merchant via Vera',data.message.body,'assistant');
       el('reply-form').hidden=false;el('reply-input').value='';
     }else{el('messages').append(node('div','wait-message','Vera chose not to send: '+data.reason))}
-  }catch(err){el('messages').replaceChildren(node('div','wait-message','Could not load preview: '+err.message))}
+  }catch(err){if(requestId===state.previewRequest)el('messages').replaceChildren(node('div','wait-message','Could not load preview: '+err.message))}
 }
 
 async function sendReply(ev) {
@@ -152,14 +153,19 @@ async function sendReply(ev) {
 
 async function startup(){
   el('reply-form').addEventListener('submit',sendReply);
+  el('ai-toggle').addEventListener('change',ev=>{
+    state.aiSelected=ev.target.checked;
+    if(state.selected)selectScenario(state.selected);
+  });
   filters();
   loadEvaluation();
   try{
     const [scenarios,health]=await Promise.all([fetch('/demo/scenarios').then(r=>r.json()),fetch('/v1/healthz').then(r=>r.json())]);
     state.scenarios=scenarios.scenarios;
-    state.ai=scenarios.ai_available;
+    state.aiAvailable=scenarios.ai_available;
+    el('ai-toggle-wrap').hidden=!state.aiAvailable;
     el('status').innerHTML='';
-    el('status').append(node('i'),document.createTextNode(health.status==='ok'?(state.ai?' AI ready':' Bot online'):' Offline'));
+    el('status').append(node('i'),document.createTextNode(health.status==='ok'?' Bot online':' Offline'));
     renderScenarios();
     if(state.scenarios.length)selectScenario(state.scenarios[0].id);
   }catch(err){el('status').classList.add('offline');el('status').textContent=' Unable to connect';el('scenario-list').textContent='The service is unavailable. Check the server and refresh.'}

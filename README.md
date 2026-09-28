@@ -4,15 +4,15 @@
 
 Vera is an AI-assisted merchant engagement prototype built for the magicpin AI challenge. It uses supplied business and event context to decide when to send a relevant WhatsApp-style message, when to stay quiet, and how to handle YES, questions, Hindi-English replies and STOP. The website has 10 interactive synthetic scenarios. It does **not** send real WhatsApp messages, book appointments, or change a merchant's Google profile.
 
-The service exposes five `/v1/*` endpoints for the challenge's context, tick, reply, health and metadata calls. In an isolated local HTTP check it loaded 355 synthetic contexts, replayed 30 supplied send/skip pairs, exercised timed ticks and reply handling, and passed 24 automated tests. The separate 38.13/50 figure shown on the site is an OpenAI **practice message-quality rubric**, not an official accuracy score.
+The service exposes five `/v1/*` endpoints for the challenge's context, tick, reply, health and metadata calls. In an isolated local HTTP check it loaded 355 synthetic contexts, replayed 30 supplied send/skip pairs, exercised timed ticks and reply handling, and passed 30 automated tests. The separate 38.13/50 figure shown on the site is an OpenAI **practice message-quality rubric**, not an official accuracy score.
 
 ## Approach
 
 - `app.py`: five required `/v1/*` endpoints, atomic context version updates, per-recipient suppression, and conversation handling.
 - `storage.py`: SQLite on a laptop; PostgreSQL when `DATABASE_URL` is set. The Render Blueprint provisions a free Postgres database and injects its private connection URL.
 - `engine.py`: deterministic message composer using supplied trigger facts, category digests, merchant offers, and customer consent. Placeholder triggers, missing facts, expired events, and unconsented customer sends are skipped.
-- `writer.py`: optional OpenAI wording rewrite of eligible messages with fact checks and automatic fallback. Set `OPENAI_API_KEY` privately on the host; default model is `gpt-4.1-mini`.
-- `demo.py` and `web/`: interactive scenario previews and a conversation mockup. Preview data is synthetic and does not overwrite judge state.
+- `writer.py`: optional OpenAI wording rewrite of eligible messages with fact checks and automatic fallback. Factual sentences stay tied to their original dates, prices, offers and status. Set `OPENAI_API_KEY` privately on the host; default model is `gpt-4.1-mini`.
+- `demo.py` and `web/`: interactive scenario previews and a conversation mockup. The fast grounded preview is the default; visitors can choose optional AI wording. Preview data is synthetic and does not overwrite judge state.
 - First outbound actions include a mock template name and parameters. A YES reply creates a reviewable draft; it never claims to have published or sent the draft.
 - A repeated auto-reply is ended; STOP and not-interested requests end and suppress further proactive sends. Only one proactive send per recipient per tick, capped at 20 actions. Follow-ups do not repeat the initial message.
 
