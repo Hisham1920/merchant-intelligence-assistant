@@ -4,7 +4,7 @@
 
 Vera is an AI-assisted merchant engagement prototype built for the magicpin AI challenge. It uses supplied business and event context to decide when to send a relevant WhatsApp-style message, when to stay quiet, and how to handle YES, questions, Hindi-English replies and STOP. The website has 10 interactive synthetic scenarios. It does **not** send real WhatsApp messages, book appointments, or change a merchant's Google profile.
 
-The service exposes five `/v1/*` endpoints for the challenge's context, tick, reply, health and metadata calls. In an isolated local HTTP check it loaded 355 synthetic contexts, replayed 30 supplied send/skip pairs, exercised timed ticks and reply handling, and passed 30 automated tests. The separate 38.13/50 figure shown on the site is an OpenAI **practice message-quality rubric**, not an official accuracy score.
+The service exposes five `/v1/*` endpoints for the challenge's context, tick, reply, health and metadata calls. In an isolated local HTTP check it loaded 355 synthetic contexts, replayed 30 supplied send/skip pairs, exercised timed ticks and reply handling, and passed 31 automated tests. The separate 38.13/50 figure shown on the site is an OpenAI **practice message-quality rubric**, not an official accuracy score.
 
 ## Approach
 

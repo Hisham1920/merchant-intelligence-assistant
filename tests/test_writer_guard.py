@@ -105,6 +105,14 @@ class WriterGuardTests(unittest.TestCase):
             actual = improve(message, category, merchant, trigger, customer)
         self.assertEqual(actual["body"], candidate)
 
+    def test_unchanged_model_response_does_not_claim_to_refine_wording(self):
+        message, category, merchant, trigger, customer = self.cases["T24"]
+        response = {"choices": [{"message": {"content": json.dumps({"body": message["body"]})}}]}
+        with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}), patch(
+            "writer.request.urlopen", return_value=io.BytesIO(json.dumps(response).encode())
+        ):
+            self.assertEqual(improve(message, category, merchant, trigger, customer), message)
+
 
 if __name__ == "__main__":
     unittest.main()

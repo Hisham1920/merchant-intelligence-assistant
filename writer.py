@@ -65,6 +65,8 @@ def improve(message: dict, category: dict, merchant: dict, trigger: dict,
         body = candidate.get("body", "").strip()
         if not valid(body, baseline, context):
             return message
+        if body == baseline:
+            return message
         return {**message, "body": body, "rationale": message["rationale"] + " Wording refined with a grounded AI pass."}
     except (TimeoutError, ValueError, KeyError, IndexError, TypeError, error.URLError, OSError):
         return message
